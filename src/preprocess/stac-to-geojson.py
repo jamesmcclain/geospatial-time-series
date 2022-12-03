@@ -62,12 +62,6 @@ def parser() -> argparse.ArgumentParser:
     return parser
 
 
-def url_to_name(surl) -> str:
-    url = surl.href.split('?')[0]
-    parts = url.split('/')[-2:]
-    return f'{parts[0]}_{parts[1]}'
-
-
 M = {
     "Agricultural areas": 1,
     "Artificial areas": 2,
@@ -87,7 +81,7 @@ if __name__ == '__main__':
         if 'scene' not in collection.id:
             continue
         for item in collection.get_items():
-            name = url_to_name(item.assets.get('signedURL'))
+            name = str(item.id)
 
     for collection in cat.get_collections():
         if 'labels' not in collection.id:
@@ -103,7 +97,7 @@ if __name__ == '__main__':
                     data = json.loads(z.read(data_loc))
             link = item.get_links('source')[0]
             other_item = link.resolve_stac_object().target
-            name = url_to_name(other_item.assets.get('signedURL'))
+            name = str(other_item.id)
 
             # For each label, append label to list
             data2 = {}
@@ -115,7 +109,7 @@ if __name__ == '__main__':
                 data2.get(default).append(sh)
 
             # For each label type, convert labels into single label
-            stem, ext = name.split('.')
+            stem = name
             data3 = {
                 'type': 'FeatureCollection',
                 'features': [],
