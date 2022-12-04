@@ -16,6 +16,7 @@ from dataset import TLDataset
 def worker_init_fn(i):
     random.seed(i)
 
+
 dataloader_cfg = {
     'batch_size': None,
     'num_workers': None,
@@ -25,7 +26,7 @@ dataloader_cfg = {
 
 def cli_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--architecture', required=False, type=str, default='resnet18', choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152'])
+    parser.add_argument('--architecture', required=False, type=str, default='resnet18', choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'cheaplab'])
     parser.add_argument('--batch-size', required=False, type=int, default=8)
     parser.add_argument('--epochs', required=False, type=int, default=2**7)
     parser.add_argument('--eval-batches', required=False, type=int, default=2**6)
@@ -43,6 +44,9 @@ if __name__ == '__main__':
                         level=logging.INFO,
                         format='%(asctime)-15s %(message)s')
     log = logging.getLogger()
+    if args.output_dir is not None:
+        fh = logging.FileHandler(f'{args.output_dir}/{args.architecture}.log')
+        log.addHandler(fh)
     dataloader_cfg['batch_size'] = args.batch_size
     dataloader_cfg['num_workers'] = args.num_workers
 
@@ -58,15 +62,22 @@ if __name__ == '__main__':
         ))
 
     device = torch.device('cuda')
-    model = torch.hub.load(
-        'jamesmcclain/pytorch-fpn:02eb7d4a3b47db22ec30804a92713a08acff6af8',
-        'make_fpn_resnet',
-        name=args.architecture,
-        fpn_type='panoptic',
-        num_classes=6,
-        fpn_channels=256,
-        in_channels=12,
-        out_size=(args.size, args.size)).to(device)
+    if 'resnet' in args.architecture:
+        model = torch.hub.load(
+            'jamesmcclain/pytorch-fpn:02eb7d4a3b47db22ec30804a92713a08acff6af8',
+            'make_fpn_resnet',
+            name=args.architecture,
+            fpn_type='panoptic',
+            num_classes=6,
+            fpn_channels=256,
+            in_channels=12,
+            out_size=(args.size, args.size)).to(device)
+    elif 'cheaplab' in args.architecture:
+        model = torch.hub.load(
+            'jamesmcclain/CheapLab:38af8e6cd084fc61792f29189158919c69d58c6a',
+            'make_cheaplab_model',
+            num_channels=12,
+            out_channels=6).to(device)
     obj = torch.nn.CrossEntropyLoss(ignore_index=0).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=1e-5)
 
@@ -96,11 +107,9 @@ if __name__ == '__main__':
         log.info(f'Epoch={i} train={loss_t} eval={loss_e}')
         if loss_e < best:
             best = loss_e
-            torch.save(
-                model.state_dict(),
-                f'{args.output_dir}/{args.architecture}-best.pth')
+            torch.save(model.state_dict(),
+                       f'{args.output_dir}/{args.architecture}-best.pth')
 
     if args.output_dir:
-        torch.save(
-            model.state_dict(),
-            f'{args.output_dir}/{args.architecture}-last.pth')
+        torch.save(model.state_dict(),
+                   f'{args.output_dir}/{args.architecture}-last.pth')
