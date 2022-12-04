@@ -1,10 +1,8 @@
 import glob
 
 import torch
-import tqdm
 import rasterio as rio
 import random
-import os
 import numpy as np
 import math
 
@@ -16,9 +14,7 @@ class TLDataset(torch.utils.data.IterableDataset):
         self.size = size
         self.evaluation = evaluation
 
-        random.seed(os.getpid())
-
-        for label_filename in tqdm.tqdm(glob.glob(f'{path}/*-label.tif')):
+        for label_filename in glob.glob(f'{path}/*-label.tif'):
             imagery_filename = label_filename.replace('-label.tif', '-imagery.tif')
             try:
                 with rio.open(label_filename, 'r') as label_ds, rio.open(imagery_filename, 'r') as imagery_ds:
@@ -39,7 +35,6 @@ class TLDataset(torch.utils.data.IterableDataset):
             height = imagery_ds.height
             width = imagery_ds.width
             bands = imagery_ds.count
-            bands = 4 # XXX
 
             if self.evaluation == False:
                 n = random.randrange(self.size // 4, self.size * 4)
@@ -66,7 +61,6 @@ class TLDataset(torch.utils.data.IterableDataset):
                     resampling=rio.enums.Resampling.nearest,
                 )
                 imagery = imagery_ds.read(
-                    list(range(0+1,4+1)), # XXX
                     window=w,
                     out_shape=(bands, self.size, self.size),
                     resampling=rio.enums.Resampling.nearest,
@@ -75,6 +69,7 @@ class TLDataset(torch.utils.data.IterableDataset):
                 label = None
                 imagery = None
 
-        imagery = np.transpose(imagery, (1, 2, 0)).astype(np.float16)
-        label = np.transpose(label, (1, 2, 0)).astype(np.uint8)
+        imagery = imagery.astype(np.float32)
+        label = np.squeeze(label, axis=0).astype(np.long)
+        label[imagery[0,:,:] == 0] == 0
         return (imagery, label)
