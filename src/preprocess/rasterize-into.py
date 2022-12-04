@@ -53,8 +53,8 @@ if __name__ == '__main__':
         [xmin, xmax] = sorted([x1, x2])
         [ymin, ymax] = sorted([y1, y2])
 
-        stem = tif[:-4]
-        infile = f'{stem}.geojson'
+        stem = tif[:-4].replace('-imagery', '')
+        infile = f'/vsigzip/{stem}.geojson.gz'
         outfile = f'{stem}-label.tif'
-        command = f'gdal_rasterize -at -co "TILED=YES" -co "BIGTIFF=YES" -co "COMPRESS=deflate" -a default -te {xmin} {ymin} {xmax} {ymax} -ts {width} {height} -ot Byte {infile} {outfile}'
+        command = f'OGR_GEOJSON_MAX_OBJ_SIZE=0 gdal_rasterize -at -co "TILED=YES" -co "BIGTIFF=YES" -co "COMPRESS=deflate" -co "PREDICTOR=2" -a default -te {xmin} {ymin} {xmax} {ymax} -ts {width} {height} -ot Byte {infile} {outfile}'
         os.system(command)
