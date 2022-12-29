@@ -1,16 +1,21 @@
 import glob
-
-import torch
-import rasterio as rio
-import random
-import numpy as np
 import math
+import random
 from typing import List
+
+import numpy as np
+import rasterio as rio
+import torch
 
 
 class SeriesDataset(torch.utils.data.IterableDataset):
 
-    def __init__(self, series_paths: List[str], mosaic_path:str, size:int=256, max_seq=20, evaluation:bool=False):
+    def __init__(self,
+                 series_paths: List[str],
+                 mosaic_path: str,
+                 size: int = 256,
+                 max_seq=20,
+                 evaluation: bool = False):
         self.series = []
         self.mosaic = None
         self.size = size
@@ -42,10 +47,8 @@ class SeriesDataset(torch.utils.data.IterableDataset):
 
         # self.bands = list(range(1, self.bands+1))
 
-
     def __iter__(self):
         return self
-
 
     def __next__(self):
         height = self.height
@@ -85,11 +88,12 @@ class SeriesDataset(torch.utils.data.IterableDataset):
         source = []
         for filename in random.sample(self.series, len(self.series))[:max_seq]:
             with rio.open(filename, 'r') as ds:
-                source.append(ds.read(
-                    window=w,
-                    out_shape=(self.bands, self.size, self.size),
-                    resampling=rio.enums.Resampling.nearest,
-                ).astype(np.float32))
+                source.append(
+                    ds.read(
+                        window=w,
+                        out_shape=(self.bands, self.size, self.size),
+                        resampling=rio.enums.Resampling.nearest,
+                    ).astype(np.float32))
         source = np.stack(source, axis=0)
 
         return (source, target)
