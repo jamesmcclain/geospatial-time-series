@@ -26,15 +26,15 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 # OTHER DEALINGS IN THE SOFTWARE.
 
-import json
-import copy
-from shapely.geometry import shape
-from shapely.ops import unary_union
-from shapely.geometry import mapping
 import argparse
+import copy
+import json
 import zipfile
+
 import pystac
 from pystac.stac_io import DefaultStacIO, StacIO
+from shapely.geometry import mapping, shape
+from shapely.ops import unary_union
 
 
 class CustomStacIO(DefaultStacIO):
@@ -69,7 +69,6 @@ M = {
     "Water bodies": 4,
     "Wetlands": 5,
 }
-
 
 if __name__ == '__main__':
     args = parser().parse_args()
@@ -116,8 +115,10 @@ if __name__ == '__main__':
             }
             for k, v in data2.items():
                 data3.get('features').append({
-                    'type': 'Feature',
-                    'geometry': mapping(unary_union(v)),
+                    'type':
+                    'Feature',
+                    'geometry':
+                    mapping(unary_union(v)),
                     'properties': {
                         'default': M.get(k),
                     },
