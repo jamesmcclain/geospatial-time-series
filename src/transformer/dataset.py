@@ -53,21 +53,21 @@ class SeriesDataset(torch.utils.data.IterableDataset):
         max_seq = self.max_seq
 
         if self.evaluation == False:
-            n = random.randrange(self.size // 4, self.size * 4)
-            n = self.size # XXX
+            n = random.randrange(self.size // 2, self.size * 2)
+            # n = self.size  # XXX
             y = random.randrange(0, int(math.sqrt(0.80) * height) - n)
             x = random.randrange(0, int(math.sqrt(0.80) * width) - n)
         elif self.evaluation == True:
             if random.randint(0, 1) > 0:
                 _n = int((1.0 - math.sqrt(0.80)) * height)
                 n = random.randrange(_n // 2, _n)
-                n = self.size # XXX
+                # n = self.size  # XXX
                 y = random.randrange(int(math.sqrt(0.80) * height), height - n)
                 x = random.randrange(0, width - n)
             else:
                 _n = int((1.0 - math.sqrt(0.80)) * width)
                 n = random.randrange(_n // 2, _n)
-                n = self.size # XXX
+                # n = self.size  # XXX
                 y = random.randrange(0, height - n)
                 x = random.randrange(int(math.sqrt(0.80) * width), width - n)
 
@@ -80,7 +80,6 @@ class SeriesDataset(torch.utils.data.IterableDataset):
                 out_shape=(self.bands, self.size, self.size),
                 resampling=rio.enums.Resampling.nearest,
             ).astype(np.float32)
-        target = np.stack([target for i in range(0, len(self.series))], axis=0)
 
         # Read source sequence
         source = []
