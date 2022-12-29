@@ -1,10 +1,10 @@
 import glob
-
-import torch
-import rasterio as rio
-import random
-import numpy as np
 import math
+import random
+
+import numpy as np
+import rasterio as rio
+import torch
 
 
 class TLDataset(torch.utils.data.IterableDataset):
@@ -15,9 +15,11 @@ class TLDataset(torch.utils.data.IterableDataset):
         self.evaluation = evaluation
 
         for label_filename in glob.glob(f'{path}/*-label.tif'):
-            imagery_filename = label_filename.replace('-label.tif', '-imagery.tif')
+            imagery_filename = label_filename.replace('-label.tif',
+                                                      '-imagery.tif')
             try:
-                with rio.open(label_filename, 'r') as label_ds, rio.open(imagery_filename, 'r') as imagery_ds:
+                with rio.open(label_filename, 'r') as label_ds, rio.open(
+                        imagery_filename, 'r') as imagery_ds:
                     assert label_ds.height == imagery_ds.height
                     assert label_ds.width == imagery_ds.width
                     self.pairs.append((imagery_filename, label_filename))
@@ -31,7 +33,9 @@ class TLDataset(torch.utils.data.IterableDataset):
         index = random.randrange(0, len(self.pairs))
         imagery_filename, label_filename = self.pairs[index]
 
-        with rio.open(label_filename, 'r') as label_ds, rio.open(imagery_filename, 'r') as imagery_ds:
+        with rio.open(label_filename,
+                      'r') as label_ds, rio.open(imagery_filename,
+                                                 'r') as imagery_ds:
             height = imagery_ds.height
             width = imagery_ds.width
             bands = imagery_ds.count
@@ -44,13 +48,15 @@ class TLDataset(torch.utils.data.IterableDataset):
                 if random.randint(0, 1) > 0:
                     _n = int((1.0 - math.sqrt(0.80)) * height)
                     n = random.randrange(_n // 2, _n)
-                    y = random.randrange(int(math.sqrt(0.80) * height), height - n)
+                    y = random.randrange(int(math.sqrt(0.80) * height),
+                                         height - n)
                     x = random.randrange(0, width - n)
                 else:
                     _n = int((1.0 - math.sqrt(0.80)) * width)
                     n = random.randrange(_n // 2, _n)
                     y = random.randrange(0, height - n)
-                    x = random.randrange(int(math.sqrt(0.80) * width), width - n)
+                    x = random.randrange(int(math.sqrt(0.80) * width),
+                                         width - n)
 
             w = rio.windows.Window(x, y, n, n)
 
@@ -71,5 +77,5 @@ class TLDataset(torch.utils.data.IterableDataset):
 
         imagery = imagery.astype(np.float32)
         label = np.squeeze(label, axis=0).astype(np.long)
-        label[imagery[0,:,:] == 0] == 0
+        label[imagery[0, :, :] == 0] == 0
         return (imagery, label)
