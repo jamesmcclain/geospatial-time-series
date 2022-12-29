@@ -107,8 +107,9 @@ if __name__ == '__main__':
         log.info(f'Epoch={i} train={loss_t} eval={loss_e}')
         if loss_e < best:
             best = loss_e
-            torch.save(model.state_dict(),
-                       f'{args.output_dir}/{args.architecture}-best.pth')
+            if args.output_dir:
+                torch.save(model.state_dict(),
+                           f'{args.output_dir}/{args.architecture}-best.pth')
 
     if args.output_dir:
         torch.save(model.state_dict(),
