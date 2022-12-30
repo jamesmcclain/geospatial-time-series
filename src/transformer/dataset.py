@@ -6,7 +6,6 @@ from typing import List
 import numpy as np
 import rasterio as rio
 import torch
-import glob
 
 
 class RawSeriesDataset(torch.utils.data.IterableDataset):
@@ -103,9 +102,7 @@ class RawSeriesDataset(torch.utils.data.IterableDataset):
 class NpzSeriesDataset(torch.utils.data.Dataset):
 
     def __init__(self, path):
-
         self.filenames = []
-
         for filename in glob.glob(f'{path}/*.npz'):
             try:
                 _ = np.load(filename)
@@ -116,8 +113,11 @@ class NpzSeriesDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.filenames)
 
-    def __getitem(self, index):
-        thing = np.load(self.filenames[index])
-        source = thing.get('source')
-        target = thing.get('target')
+    def __getitem__(self, index):
+        try:
+            thing = np.load(self.filenames[index])
+        except:
+            print(self.filenames[index])
+        source = np.squeeze(thing.get('source'))
+        target = np.squeeze(thing.get('target'))
         return (source, target)
