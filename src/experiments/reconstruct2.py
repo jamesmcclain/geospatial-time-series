@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 
-from PIL import Image
-import logging
 import argparse
-import torch
-import tqdm
+import logging
+import math
 import random
 import sys
+
 import numpy as np
-import math
+import torch
+import tqdm
+from PIL import Image
 
 
 def cli_parser():
@@ -55,13 +56,12 @@ def cli_parser():
 
 class TransformerModel(torch.nn.Module):
 
-    def __init__(self,
-                 dimensions=512,
-                 num_heads=1,
-                 encoder_layers=1):
+    def __init__(self, dimensions=512, num_heads=1, encoder_layers=1):
         super().__init__()
-        encoder_layer = torch.nn.TransformerEncoderLayer(d_model=dimensions, nhead=num_heads)
-        self.transformer_encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=encoder_layers)
+        encoder_layer = torch.nn.TransformerEncoderLayer(d_model=dimensions,
+                                                         nhead=num_heads)
+        self.transformer_encoder = torch.nn.TransformerEncoder(
+            encoder_layer, num_layers=encoder_layers)
 
     def forward(self, source_seq):
         out = self.transformer_encoder(source_seq)
@@ -82,6 +82,7 @@ def generate_seqs(seq_length, batch_size, dimensions, noise, device):
                       device=device)
     source_seq = target_seq * (mask <= noise)
     return source_seq, target_seq
+
 
 if __name__ == '__main__':
     args = cli_parser().parse_args()
@@ -104,15 +105,14 @@ if __name__ == '__main__':
     log.info(args.__dict__)
 
     best = math.inf
-    for epoch in range(1, args.epochs+1):
+    for epoch in range(1, args.epochs + 1):
 
         model.train()
         loss_t = 0.0
         for _ in tqdm.tqdm(range(0, args.train_batches)):
             source_seq, target_seq = generate_seqs(args.sequence_length,
                                                    args.batch_size,
-                                                   args.dimensions,
-                                                   args.noise,
+                                                   args.dimensions, args.noise,
                                                    device)
             out = model(source_seq)
             loss = obj(out, target_seq)
@@ -127,8 +127,7 @@ if __name__ == '__main__':
         for _ in tqdm.tqdm(range(0, args.eval_batches)):
             source_seq, target_seq = generate_seqs(args.sequence_length,
                                                    args.batch_size,
-                                                   args.dimensions,
-                                                   args.noise,
+                                                   args.dimensions, args.noise,
                                                    device)
             out = model(source_seq)
             loss_e += obj(out, target_seq).item()
@@ -138,12 +137,14 @@ if __name__ == '__main__':
         if loss_e < best:
             best = loss_e
             if args.output_dir:
-                torch.save(model.state_dict(), f'{args.output_dir}/reconstruct-best.pth')
+                torch.save(model.state_dict(),
+                           f'{args.output_dir}/reconstruct-best.pth')
 
         if args.output_dir and args.png:
             encoder_layer_0 = model.transformer_encoder.layers[0].self_attn
             encoder_qkv = encoder_layer_0.in_proj_weight.cpu().detach().numpy()
-            encoder_out = encoder_layer_0.out_proj.weight.cpu().detach().numpy()
+            encoder_out = encoder_layer_0.out_proj.weight.cpu().detach().numpy(
+            )
             encoder_data = np.concatenate([encoder_qkv, encoder_out], axis=0).T
             encoder_data -= encoder_data.min()
             hi = encoder_data.max()
@@ -152,4 +153,5 @@ if __name__ == '__main__':
             Image.fromarray(encoder_data).save(filename)
 
     if args.output_dir:
-        torch.save(model.state_dict(), f'{args.output_dir}/reconstruct-last.pth')
+        torch.save(model.state_dict(),
+                   f'{args.output_dir}/reconstruct-last.pth')

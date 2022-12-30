@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
-import logging
 import argparse
 import logging
+import math
+import random
+import sys
+
 import torch
 import torchvision as tv
 import tqdm
-import sys
-import math
-import random
 
 from dataset import TLDataset
 
@@ -26,15 +26,28 @@ dataloader_cfg = {
 
 def cli_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--architecture', required=False, type=str, default='resnet18', choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'cheaplab'])
+    parser.add_argument('--architecture',
+                        required=False,
+                        type=str,
+                        default='resnet18',
+                        choices=[
+                            'resnet18', 'resnet34', 'resnet50', 'resnet101',
+                            'resnet152', 'cheaplab'
+                        ])
     parser.add_argument('--batch-size', required=False, type=int, default=8)
     parser.add_argument('--epochs', required=False, type=int, default=2**7)
-    parser.add_argument('--eval-batches', required=False, type=int, default=2**6)
+    parser.add_argument('--eval-batches',
+                        required=False,
+                        type=int,
+                        default=2**6)
     parser.add_argument('--num-workers', required=False, type=int, default=8)
     parser.add_argument('--output-dir', required=False, type=str, default=None)
     parser.add_argument('--input-dir', required=True, type=str)
     parser.add_argument('--size', required=False, type=int, default=256)
-    parser.add_argument('--train-batches', required=False, type=int, default=2**9)
+    parser.add_argument('--train-batches',
+                        required=False,
+                        type=int,
+                        default=2**9)
     return parser
 
 

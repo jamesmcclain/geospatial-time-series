@@ -48,8 +48,12 @@ if __name__ == '__main__':
         command = f'gdalinfo -json {tif}'
         gdalinfo = json.loads(os.popen(command).read())
         [width, height] = list(map(int, gdalinfo.get('size')))
-        [x1, y1] = list(map(float, gdalinfo.get('cornerCoordinates').get('upperLeft')))
-        [x2, y2] = list(map(float, gdalinfo.get('cornerCoordinates').get('lowerRight')))
+        [x1, y1] = list(
+            map(float,
+                gdalinfo.get('cornerCoordinates').get('upperLeft')))
+        [x2, y2] = list(
+            map(float,
+                gdalinfo.get('cornerCoordinates').get('lowerRight')))
         [xmin, xmax] = sorted([x1, x2])
         [ymin, ymax] = sorted([y1, y2])
 

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 
-from PIL import Image
-import logging
 import argparse
-import torch
-import tqdm
+import logging
+import math
 import random
 import sys
+
 import numpy as np
-import math
+import torch
+import tqdm
+from PIL import Image
 
 
 def cli_parser():
@@ -98,6 +99,7 @@ def generate_seqs(seq_length, batch_size, dimensions, noise, device):
     target_mask = target_mask.fill_(-math.inf)
     return source_seq, target_seq, target.reshape(batch_size, dimensions)
 
+
 if __name__ == '__main__':
     args = cli_parser().parse_args()
     logging.basicConfig(stream=sys.stderr,
@@ -121,17 +123,16 @@ if __name__ == '__main__':
     log.info(args.__dict__)
 
     best = math.inf
-    for epoch in range(1, args.epochs+1):
+    for epoch in range(1, args.epochs + 1):
 
         model.train()
         loss_t = 0.0
         for _ in tqdm.tqdm(range(0, args.train_batches)):
-            source_seq, target_seq, target = generate_seqs(args.sequence_length,
-                                                           args.batch_size,
-                                                           args.dimensions, args.noise,
-                                                           device)
+            source_seq, target_seq, target = generate_seqs(
+                args.sequence_length, args.batch_size, args.dimensions,
+                args.noise, device)
             out = model(source_seq, target_seq)
-            loss = obj(out[:,0,:], target)
+            loss = obj(out[:, 0, :], target)
             loss_t += loss.item()
             loss.backward()
             opt.step()
@@ -141,25 +142,26 @@ if __name__ == '__main__':
         model.eval()
         loss_e = 0.0
         for _ in tqdm.tqdm(range(0, args.eval_batches)):
-            source_seq, target_seq, target = generate_seqs(args.sequence_length,
-                                                           args.batch_size,
-                                                           args.dimensions, args.noise,
-                                                           device)
+            source_seq, target_seq, target = generate_seqs(
+                args.sequence_length, args.batch_size, args.dimensions,
+                args.noise, device)
             out = model(source_seq, target_seq)
-            loss_e += obj(out[:,0,:], target).item()
+            loss_e += obj(out[:, 0, :], target).item()
         loss_e /= float(args.eval_batches)
 
         log.info(f'Epoch={epoch} train={loss_t} eval={loss_e}')
         if loss_e < best:
             best = loss_e
             if args.output_dir:
-                torch.save(model.state_dict(), f'{args.output_dir}/reconstruct-best.pth')
+                torch.save(model.state_dict(),
+                           f'{args.output_dir}/reconstruct-best.pth')
 
         if args.output_dir and args.png:
             encoder_layer_0 = model.transformer.encoder.layers[0].self_attn
             # encoder_layer_0 = model.transformer.decoder.layers[0].multihead_attn
             encoder_qkv = encoder_layer_0.in_proj_weight.cpu().detach().numpy()
-            encoder_out = encoder_layer_0.out_proj.weight.cpu().detach().numpy()
+            encoder_out = encoder_layer_0.out_proj.weight.cpu().detach().numpy(
+            )
             encoder_data = np.concatenate([encoder_qkv, encoder_out], axis=0).T
             encoder_data -= encoder_data.min()
             hi = encoder_data.max()
@@ -168,4 +170,5 @@ if __name__ == '__main__':
             Image.fromarray(encoder_data).save(filename)
 
     if args.output_dir:
-        torch.save(model.state_dict(), f'{args.output_dir}/reconstruct-last.pth')
+        torch.save(model.state_dict(),
+                   f'{args.output_dir}/reconstruct-last.pth')
