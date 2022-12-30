@@ -6,9 +6,10 @@ from typing import List
 import numpy as np
 import rasterio as rio
 import torch
+import glob
 
 
-class SeriesDataset(torch.utils.data.IterableDataset):
+class RawSeriesDataset(torch.utils.data.IterableDataset):
 
     def __init__(self,
                  series_paths: List[str],
@@ -96,4 +97,27 @@ class SeriesDataset(torch.utils.data.IterableDataset):
                     ).astype(np.float32))
         source = np.stack(source, axis=0)
 
+        return (source, target)
+
+
+class NpzSeriesDataset(torch.utils.data.Dataset):
+
+    def __init__(self, path):
+
+        self.filenames = []
+
+        for filename in glob.glob(f'{path}/*.npz'):
+            try:
+                _ = np.load(filename)
+                self.filenames.append(filename)
+            except:
+                pass
+
+    def __len__(self):
+        return len(self.filenames)
+
+    def __getitem(self, index):
+        thing = np.load(self.filenames[index])
+        source = thing.get('source')
+        target = thing.get('target')
         return (source, target)

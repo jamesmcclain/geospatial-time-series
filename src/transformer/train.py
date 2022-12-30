@@ -10,7 +10,7 @@ import torch
 import torchvision as tv
 import tqdm
 
-from dataset import SeriesDataset
+from dataset import RawSeriesDataset
 
 
 def worker_init_fn(i):
@@ -67,25 +67,23 @@ if __name__ == '__main__':
 
     train_dl = iter(
         torch.utils.data.DataLoader(
-            SeriesDataset(args.series,
-                          args.mosaic,
-                          args.size,
-                          args.max_sequence,
-                          evaluation=False),
+            RawSeriesDataset(args.series,
+                             args.mosaic,
+                             args.size,
+                             args.max_sequence,
+                             evaluation=False),
             **dataloader_cfg,
         ))
     eval_dl = iter(
         torch.utils.data.DataLoader(
-            SeriesDataset(args.series,
-                          args.mosaic,
-                          args.size,
-                          args.max_sequence,
-                          evaluation=True),
+            RawSeriesDataset(args.series,
+                             args.mosaic,
+                             args.size,
+                             args.max_sequence,
+                             evaluation=True),
             **dataloader_cfg,
         ))
 
     batch = next(train_dl)
-
-    import pdb ; pdb.set_trace()
 
     pass
