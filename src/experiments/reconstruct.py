@@ -152,9 +152,10 @@ if __name__ == '__main__':
         log.info(f'Epoch={epoch} train={loss_t} eval={loss_e}')
         if loss_e < best:
             best = loss_e
+            # yapf: disable
             if args.output_dir:
-                torch.save(model.state_dict(),
-                           f'{args.output_dir}/reconstruct-best.pth')
+                torch.save(model.state_dict(), f'{args.output_dir}/reconstruct-best.pth')
+            # yapf: enable
 
         if args.output_dir and args.png:
             encoder_layer_0 = model.transformer.encoder.layers[0].self_attn
@@ -169,6 +170,7 @@ if __name__ == '__main__':
             filename = f'{args.output_dir}/encoder-{epoch:04}.png'
             Image.fromarray(encoder_data).save(filename)
 
+    # yapf: disable
     if args.output_dir:
-        torch.save(model.state_dict(),
-                   f'{args.output_dir}/reconstruct-last.pth')
+        torch.save(model.state_dict(), f'{args.output_dir}/reconstruct-last.pth')
+    # yapf: enable

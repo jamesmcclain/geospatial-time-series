@@ -101,7 +101,8 @@ class RawSeriesDataset(torch.utils.data.IterableDataset):
 
 class NpzSeriesDataset(torch.utils.data.Dataset):
 
-    def __init__(self, path):
+    def __init__(self, path, narrow: bool = False):
+        self.narrow = narrow
         self.filenames = []
         for filename in glob.glob(f'{path}/*.npz'):
             try:
@@ -120,4 +121,8 @@ class NpzSeriesDataset(torch.utils.data.Dataset):
             print(self.filenames[index])
         source = np.squeeze(thing.get('source'))
         target = np.squeeze(thing.get('target'))
+        n, _, _, _ = source.shape
+        if self.narrow:
+            source = np.max(source, axis=(2, 3))
+            target = np.max(target, axis=(1, 2))
         return (source, target)
