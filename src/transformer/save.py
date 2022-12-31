@@ -13,7 +13,7 @@ import torch
 import torchvision as tv
 import tqdm
 
-from dataset import SeriesDataset
+from dataset import RawSeriesDataset
 
 
 def worker_init_fn(i):
@@ -31,14 +31,8 @@ dataloader_cfg = {
 def cli_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', required=False, type=int, default=1)
-    parser.add_argument('--train-batches',
-                        required=False,
-                        type=int,
-                        default=8)
-    parser.add_argument('--eval-batches',
-                        required=False,
-                        type=int,
-                        default=2)
+    parser.add_argument('--train-batches', required=False, type=int, default=8)
+    parser.add_argument('--eval-batches', required=False, type=int, default=2)
     parser.add_argument('--max-sequence', required=False, type=int, default=-1)
     parser.add_argument('--mosaic', required=True, type=str)
     parser.add_argument('--num-workers', required=False, type=int, default=0)
@@ -60,11 +54,11 @@ if __name__ == '__main__':
     # Training batches
     train_dl = iter(
         torch.utils.data.DataLoader(
-            SeriesDataset(args.series,
-                          args.mosaic,
-                          args.size,
-                          args.max_sequence,
-                          evaluation=False),
+            RawSeriesDataset(args.series,
+                             args.mosaic,
+                             args.size,
+                             args.max_sequence,
+                             evaluation=False),
             **dataloader_cfg,
         ))
     for _ in range(0, args.train_batches):
@@ -76,11 +70,11 @@ if __name__ == '__main__':
     # Eval batches
     eval_dl = iter(
         torch.utils.data.DataLoader(
-            SeriesDataset(args.series,
-                          args.mosaic,
-                          args.size,
-                          args.max_sequence,
-                          evaluation=True),
+            RawSeriesDataset(args.series,
+                             args.mosaic,
+                             args.size,
+                             args.max_sequence,
+                             evaluation=True),
             **dataloader_cfg,
         ))
     for _ in range(0, args.eval_batches):
