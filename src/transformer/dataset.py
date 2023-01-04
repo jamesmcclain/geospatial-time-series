@@ -6,6 +6,7 @@ from typing import List
 import numpy as np
 import rasterio as rio
 import torch
+import tqdm
 
 
 class RawSeriesDataset(torch.utils.data.IterableDataset):
@@ -15,10 +16,12 @@ class RawSeriesDataset(torch.utils.data.IterableDataset):
                  mosaic_path: str,
                  size: int = 256,
                  max_seq=20,
-                 evaluation: bool = False):
+                 evaluation: bool = False,
+                 channels=None):
         self.series = []
         self.mosaic = None
         self.size = size
+        self.channels = channels
         self.max_seq = max_seq
         self.evaluation = evaluation
 
@@ -56,21 +59,27 @@ class RawSeriesDataset(torch.utils.data.IterableDataset):
         max_seq = self.max_seq
 
         if self.evaluation == False:
-            n = random.randrange(self.size // 2, self.size * 2)
-            # n = self.size  # XXX
+            if self.size < 64:
+                n = self.size
+            else:
+                n = random.randrange(self.size // 2, self.size * 2)
             y = random.randrange(0, int(math.sqrt(0.80) * height) - n)
             x = random.randrange(0, int(math.sqrt(0.80) * width) - n)
         elif self.evaluation == True:
             if random.randint(0, 1) > 0:
-                _n = int((1.0 - math.sqrt(0.80)) * height)
-                n = random.randrange(_n // 2, _n)
-                # n = self.size  # XXX
+                if self.size < 64:
+                    n = self.size
+                else:
+                    _n = int((1.0 - math.sqrt(0.80)) * height)
+                    n = random.randrange(_n // 2, _n)
                 y = random.randrange(int(math.sqrt(0.80) * height), height - n)
                 x = random.randrange(0, width - n)
             else:
-                _n = int((1.0 - math.sqrt(0.80)) * width)
-                n = random.randrange(_n // 2, _n)
-                # n = self.size  # XXX
+                if self.size < 64:
+                    n = self.size
+                else:
+                    _n = int((1.0 - math.sqrt(0.80)) * width)
+                    n = random.randrange(_n // 2, _n)
                 y = random.randrange(0, height - n)
                 x = random.randrange(int(math.sqrt(0.80) * width), width - n)
 
@@ -78,22 +87,41 @@ class RawSeriesDataset(torch.utils.data.IterableDataset):
 
         # Read target
         with rio.open(self.mosaic, 'r') as ds:
-            target = ds.read(
-                window=w,
-                out_shape=(self.bands, self.size, self.size),
-                resampling=rio.enums.Resampling.nearest,
-            ).astype(np.float32)
+            if self.channels is None:
+                target = ds.read(
+                    window=w,
+                    out_shape=(self.bands, self.size, self.size),
+                    resampling=rio.enums.Resampling.nearest,
+                ).astype(np.float32)
+            else:
+                target = ds.read(
+                    self.channels,
+                    window=w,
+                    out_shape=(len(self.channels), self.size, self.size),
+                    resampling=rio.enums.Resampling.nearest,
+                ).astype(np.float32)
 
         # Read source sequence
         source = []
         for filename in random.sample(self.series, len(self.series))[:max_seq]:
             with rio.open(filename, 'r') as ds:
-                source.append(
-                    ds.read(
-                        window=w,
-                        out_shape=(self.bands, self.size, self.size),
-                        resampling=rio.enums.Resampling.nearest,
-                    ).astype(np.float32))
+                if self.channels is None:
+                    source.append(
+                        ds.read(
+                            window=w,
+                            out_shape=(self.bands, self.size, self.size),
+                            resampling=rio.enums.Resampling.nearest,
+                        ).astype(np.float32))
+                else:
+                    source.append(
+                        ds.read(
+                            self.channels,
+                            window=w,
+                            out_shape=(len(self.channels), self.size,
+                                       self.size),
+                            resampling=rio.enums.Resampling.nearest,
+                        ).astype(np.float32))
+
         source = np.stack(source, axis=0)
 
         return (source, target)
@@ -101,10 +129,12 @@ class RawSeriesDataset(torch.utils.data.IterableDataset):
 
 class NpzSeriesDataset(torch.utils.data.Dataset):
 
-    def __init__(self, path, narrow: bool = False):
+    def __init__(self, path, narrow: bool = False, tiles: bool = False):
+        assert (not narrow or not tiles)
         self.narrow = narrow
+        self.tiles = tiles
         self.filenames = []
-        for filename in glob.glob(f'{path}/*.npz'):
+        for filename in tqdm.tqdm(glob.glob(f'{path}/*.npz')):
             try:
                 _ = np.load(filename)
                 self.filenames.append(filename)
@@ -119,10 +149,21 @@ class NpzSeriesDataset(torch.utils.data.Dataset):
             thing = np.load(self.filenames[index])
         except:
             print(self.filenames[index])
+            return None
+
         source = np.squeeze(thing.get('source'))
         target = np.squeeze(thing.get('target'))
-        n, _, _, _ = source.shape
+
         if self.narrow:
             source = np.max(source, axis=(2, 3))
             target = np.max(target, axis=(1, 2))
+        if self.tiles:
+            n, _, _ = source.shape
+            source = source.reshape(n, -1)
+            source[source > 2000.0] = 2000.0
+            source = (source / 2000.0)
+            target = target.reshape(-1)
+            target[target > 2000.0] = 2000.0
+            target = (target / 2000.0)
+
         return (source, target)

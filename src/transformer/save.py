@@ -29,6 +29,7 @@ dataloader_cfg = {
 
 
 def cli_parser():
+    # yapf: disable
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', required=False, type=int, default=1)
     parser.add_argument('--train-batches', required=False, type=int, default=8)
@@ -39,7 +40,10 @@ def cli_parser():
     parser.add_argument('--output-dir', required=True, type=str)
     parser.add_argument('--series', required=True, type=str, nargs='+')
     parser.add_argument('--size', required=False, type=int, default=256)
+    parser.add_argument('--channels', required=False, type=int, nargs='+', default=None)
+    parser.add_argument('--noop', required=False, type=int)
     return parser
+    # yapf: enable
 
 
 if __name__ == '__main__':
@@ -58,7 +62,8 @@ if __name__ == '__main__':
                              args.mosaic,
                              args.size,
                              args.max_sequence,
-                             evaluation=False),
+                             evaluation=False,
+                             channels=args.channels),
             **dataloader_cfg,
         ))
     for _ in range(0, args.train_batches):
@@ -74,7 +79,8 @@ if __name__ == '__main__':
                              args.mosaic,
                              args.size,
                              args.max_sequence,
-                             evaluation=True),
+                             evaluation=True,
+                             channels=args.channels),
             **dataloader_cfg,
         ))
     for _ in range(0, args.eval_batches):
