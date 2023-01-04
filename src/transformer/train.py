@@ -7,9 +7,11 @@ import math
 import random
 import sys
 
+import numpy as np
 import torch
 import torchvision as tv
 import tqdm
+from PIL import Image
 
 from dataset import NpzSeriesDataset
 
@@ -23,7 +25,7 @@ dataloader_cfg = {
     'batch_size': None,
     'num_workers': None,
     'worker_init_fn': worker_init_fn,
-    'shuffle': True,
+    'shuffle': False,
 }
 
 
@@ -49,6 +51,7 @@ def cli_parser():
     parser.add_argument('--input-dir', required=True, type=str)
     parser.add_argument('--output-dir', required=False, type=str, default=None)
     parser.add_argument('--tiles', dest='tiles', default=False, action='store_true')
+    parser.add_argument('--png', dest='png', default=False, action='store_true')
 
     return parser
     # yapf: enable
@@ -134,6 +137,28 @@ if __name__ == '__main__':
             **dataloader_cfg,
         )
 
+    if not args.tiles or args.output_dir is None:
+        args.png = False
+
+    if args.png:
+        tile_count = len(eval_dl) * args.batch_size
+        tile_count = math.ceil(math.sqrt(tile_count))
+        tile_pixels = int(math.sqrt(args.dimensions))
+        current = 0
+        s = (tile_count * tile_pixels, tile_count * tile_pixels)
+        all_tiles = np.zeros(s, dtype=np.uint8)
+        for batch in eval_dl:
+            for tile in batch[1].detach().cpu().numpy():
+                y = (current // tile_count)*tile_pixels
+                x = (current % tile_count)* tile_pixels
+                current = current + 1
+                tile = tile * 0xff
+                tile = tile.astype(np.uint8).reshape(tile_pixels, tile_pixels)
+                all_tiles[x:x+tile_pixels, y:y+tile_pixels] = tile
+        filename = f'{args.output_dir}/0000.png'
+        Image.fromarray(all_tiles).save(filename)
+        # log.info(f'{filename} saved')
+
     device = torch.device('cuda')
     model = TransformerModel(dimensions=args.dimensions,
                              num_heads=args.num_heads,
@@ -152,6 +177,7 @@ if __name__ == '__main__':
     best = math.inf
     for epoch in range(1, args.epochs + 1):
 
+        current = 0
         for mode in ['train', 'eval']:
             loss_float = 0.0
             if mode == 'train':
@@ -164,24 +190,48 @@ if __name__ == '__main__':
                 out = model(batch[0].to(device))
                 target = batch[1].to(device)
 
-                _, S, _ = out.shape
+                # _, S, _ = out.shape
                 loss = obj1(out[:, 0, :], target)
-                for s in range(1, S):
-                    loss += obj1(out[:, s, :], target)
-                loss /= float(S)
+                # loss = obj1(out[:, 0, :], batch[0][:, 0, :].to(device))
+                # for s in range(1, S):
+                #     loss += obj1(out[:, s, :], target)
+                # loss /= float(S)
                 if args.entropy:
-                    loss = loss - (float(epoch)/args.epochs) * torch.mean(obj2(out))
+                    if args.bce:
+                        loss = loss - (float(epoch)/args.epochs) * torch.mean(obj2(torch.sigmoid(out)))
+                    else:
+                        loss = loss - (float(epoch)/args.epochs) * torch.mean(obj2(out))
                 loss_float += loss.item()
 
                 opt.zero_grad()
-                loss.backward()  # probably good to have a backward step
+                loss.backward()
                 opt.step()
+
+                if args.png and mode == 'eval':
+                    for tile in out[:, 0, :]:
+                        if args.bce:
+                            tile = torch.sigmoid(tile)
+                        tile = tile.detach().cpu().numpy()
+                        y = (current // tile_count)*tile_pixels
+                        x = (current % tile_count)* tile_pixels
+                        current = current + 1
+                        tile = tile * 0xff
+                        tile[tile < 0] = 0
+                        tile[tile > 0xff] = 0xff
+                        tile = tile.astype(np.uint8).reshape(tile_pixels, tile_pixels)
+                        all_tiles[x:x+tile_pixels, y:y+tile_pixels] = tile
+
             loss_float /= float(len(dl))
 
             if mode == 'train':
                 loss_t = loss_float
             elif mode == 'eval':
                 loss_e = loss_float
+
+            if args.png and mode == 'eval':
+                filename = f'{args.output_dir}/{epoch:04}.png'
+                Image.fromarray(all_tiles).save(filename)
+                # log.info(f'{filename} saved')
 
         if loss_e < best:
             best = loss_e

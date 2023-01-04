@@ -161,8 +161,7 @@ if __name__ == '__main__':
             encoder_layer_0 = model.transformer.encoder.layers[0].self_attn
             # encoder_layer_0 = model.transformer.decoder.layers[0].multihead_attn
             encoder_qkv = encoder_layer_0.in_proj_weight.cpu().detach().numpy()
-            encoder_out = encoder_layer_0.out_proj.weight.cpu().detach().numpy(
-            )
+            encoder_out = encoder_layer_0.out_proj.weight.cpu().detach().numpy()
             encoder_data = np.concatenate([encoder_qkv, encoder_out], axis=0).T
             encoder_data -= encoder_data.min()
             hi = encoder_data.max()
