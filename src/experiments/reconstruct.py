@@ -152,16 +152,16 @@ if __name__ == '__main__':
         log.info(f'Epoch={epoch} train={loss_t} eval={loss_e}')
         if loss_e < best:
             best = loss_e
+            # yapf: disable
             if args.output_dir:
-                torch.save(model.state_dict(),
-                           f'{args.output_dir}/reconstruct-best.pth')
+                torch.save(model.state_dict(), f'{args.output_dir}/reconstruct-best.pth')
+            # yapf: enable
 
         if args.output_dir and args.png:
             encoder_layer_0 = model.transformer.encoder.layers[0].self_attn
             # encoder_layer_0 = model.transformer.decoder.layers[0].multihead_attn
             encoder_qkv = encoder_layer_0.in_proj_weight.cpu().detach().numpy()
-            encoder_out = encoder_layer_0.out_proj.weight.cpu().detach().numpy(
-            )
+            encoder_out = encoder_layer_0.out_proj.weight.cpu().detach().numpy()
             encoder_data = np.concatenate([encoder_qkv, encoder_out], axis=0).T
             encoder_data -= encoder_data.min()
             hi = encoder_data.max()
@@ -169,6 +169,7 @@ if __name__ == '__main__':
             filename = f'{args.output_dir}/encoder-{epoch:04}.png'
             Image.fromarray(encoder_data).save(filename)
 
+    # yapf: disable
     if args.output_dir:
-        torch.save(model.state_dict(),
-                   f'{args.output_dir}/reconstruct-last.pth')
+        torch.save(model.state_dict(), f'{args.output_dir}/reconstruct-last.pth')
+    # yapf: enable
