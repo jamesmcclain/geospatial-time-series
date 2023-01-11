@@ -138,6 +138,35 @@ class ResnetTransformerClassifier(torch.nn.Module):
         return x
 
 
+class BaselineClassifier(torch.nn.Module):
+
+    def __init__(self, arch, state, d_model: int = 512):
+        super().__init__()
+        self.embed = torch.hub.load(
+            'jamesmcclain/pytorch-fpn:02eb7d4a3b47db22ec30804a92713a08acff6af8',
+            'make_fpn_resnet',
+            name=arch,
+            fpn_type='panoptic',
+            num_classes=6,
+            fpn_channels=256,
+            in_channels=12,
+            out_size=(args.size, args.size)).to(device)
+        self.embed.load_state_dict(torch.load(state), strict=True)
+        self.embed = self.embed[0]
+
+        self.fc = torch.nn.Linear(d_model, 3)
+
+    def forward(self, x):
+        bs, ss, cs, xs, ys = x.shape
+        x = self.embed(x.reshape(-1, cs, xs, ys))  # embed
+        x = x[-1]  # get last output from resnet backbone
+        _, ds, xs, ys = x.shape
+        x = x.reshape(bs, ss, ds, xs, ys)
+        x = torch.mean(x, dim=(1, 3, 4))  # average embeddings
+        x = self.fc(x)  # pass through fully-connected layer
+        return x
+
+
 if __name__ == '__main__':
     args = cli_parser().parse_args()
     logging.basicConfig(stream=sys.stderr,
@@ -189,7 +218,7 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------------
 
     device = torch.device('cuda')
-    if args.architecture == 'series-classifier':
+    if args.architecture == 'series-resnet-classifier':
         assert args.resnet_architecture is not None
         assert args.resnet_state is not None
         assert args.dimensions is not None
@@ -202,6 +231,15 @@ if __name__ == '__main__':
             args.dimensions + 0,
             args.num_heads,
             args.encoder_layers,
+        ).to(device)
+    elif args.architecture == 'baseline-classifier':
+        assert args.resnet_architecture is not None
+        assert args.resnet_state is not None
+        assert args.dimensions is not None
+        model = BaselineClassifier(
+            args.resnet_architecture,
+            args.resnet_state,
+            args.dimensions,
         ).to(device)
 
     obj1 = torch.nn.MSELoss().to(device)

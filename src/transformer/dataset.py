@@ -40,9 +40,9 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
         self.pos_template[0, 1::2] = np.power(x, range(0, dimensions // 2))
 
         if self.evaluation == False:
-            desc='Loading training data'
+            desc = 'Loading training data'
         elif self.evaluation == True:
-            desc='Loading evaluation data'
+            desc = 'Loading evaluation data'
 
         for filename in tqdm.tqdm(series_paths, desc=desc):
             with rio.open(filename, 'r') as ds:
