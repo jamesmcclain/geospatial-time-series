@@ -34,7 +34,7 @@ def cli_parser():
     parser = argparse.ArgumentParser()
 
     # Dataset, model type, input, output
-    parser.add_argument('--architecture', required=True, type=str, choices=['baseline-classifier', 'resnet-transformer-classifier'])
+    parser.add_argument('--architecture', required=True, type=str, choices=['baseline-classifier', 'attention-classifier', 'resnet-transformer-classifier'])
     parser.add_argument('--dataset', required=True, type=str, choices=['in-memory-seasonal'])
     parser.add_argument('--input-dir', required=False, type=str)
     parser.add_argument('--output-dir', required=False, type=str)
@@ -130,8 +130,7 @@ class ResnetTransformerClassifier(torch.nn.Module):
         # x = torch.cat([x, pos], dim=2)  # XXX concat positional embeddings
         x = x + pos
         bs, ss, ds = x.shape
-        cls = (torch.ones(bs, 1, ds) / (bs * ds)).to(
-            x.device)  # generate cls tokens
+        cls = (torch.ones(bs, 1, ds) / (bs * ds)).to(x.device)  # generate cls tokens
         x = torch.cat([cls, x], axis=1)  # staple cls tokens to the front
         x = self.transformer_encoder(x)  # pass through transformer encoder
         x = self.fc(x[:, 0, :])  # pass through fully-connected layer
@@ -153,7 +152,6 @@ class BaselineClassifier(torch.nn.Module):
             out_size=(args.size, args.size)).to(device)
         self.embed.load_state_dict(torch.load(state), strict=True)
         self.embed = self.embed[0]
-
         self.fc = torch.nn.Linear(d_model, 3)
 
     def forward(self, x):
@@ -163,6 +161,32 @@ class BaselineClassifier(torch.nn.Module):
         _, ds, xs, ys = x.shape
         x = x.reshape(bs, ss, ds, xs, ys)
         x = torch.mean(x, dim=(1, 3, 4))  # average embeddings
+        x = self.fc(x)  # pass through fully-connected layer
+        return x
+
+
+class AttentionClassifier(BaselineClassifier):
+
+    def __init__(self, arch, state, d_model: int = 512):
+        super().__init__(arch, state, d_model)
+        self.poor_mans_attention = torch.nn.Sequential(
+            torch.nn.Linear(d_model, d_model),
+            torch.nn.ReLU(),
+            torch.nn.Linear(d_model, d_model // 2),
+            torch.nn.ReLU(),
+            torch.nn.Linear(d_model // 2, 1),
+            torch.nn.ReLU(),
+        )
+
+    def forward(self, x, pos):
+        bs, ss, cs, xs, ys = x.shape
+        x = self.embed(x.reshape(-1, cs, xs, ys))  # embed
+        x = x[-1]  # get last output from resnet backbone
+        _, ds, xs, ys = x.shape
+        x = x.reshape(bs, ss, ds, xs, ys)
+        x = torch.mean(x, dim=(3, 4))  # average embeddings
+        weights = self.poor_mans_attention(pos)
+        x = torch.mean(x * weights, dim=1)
         x = self.fc(x)  # pass through fully-connected layer
         return x
 
@@ -232,6 +256,15 @@ if __name__ == '__main__':
             args.num_heads,
             args.encoder_layers,
         ).to(device)
+    elif args.architecture == 'attention-classifier':
+        assert args.resnet_architecture is not None
+        assert args.resnet_state is not None
+        assert args.dimensions is not None
+        model = AttentionClassifier(
+            args.resnet_architecture,
+            args.resnet_state,
+            args.dimensions,
+        ).to(device)
     elif args.architecture == 'baseline-classifier':
         assert args.resnet_architecture is not None
         assert args.resnet_state is not None
@@ -269,10 +302,12 @@ if __name__ == '__main__':
                 x = batch[0].to(device)
                 pos = batch[2].to(device)
                 target = batch[1].to(device)
-                if args.architecture in {'resnet-transformer-classifier'}:
+                # yapf: disable
+                if args.architecture in {'attention-classifier', 'resnet-transformer-classifier'}:
                     out = model(x, pos)
                 elif args.architecture in {'baseline-classifier'}:
                     out = model(x)
+                # yapf: enable
                 loss = obj1(out, target)
                 loss_float.append(loss.item())
 

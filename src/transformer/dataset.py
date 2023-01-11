@@ -95,9 +95,9 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
         labels = self.labels[:, y:(y + size), x:(x + size)].astype(np.uint8)
         if self.digest_labels:
             labels = np.array([
-                100 * np.mean(labels == 1),  # farms
-                100 * np.mean(labels == 2),  # forests
-                100 * np.mean(labels == 3),  # roads
+                np.mean(labels == 1),  # farms
+                np.mean(labels == 2),  # forests
+                np.mean(labels == 3),  # roads
             ]).astype(np.float32)
 
         # Sample from a subset of the mosaics
