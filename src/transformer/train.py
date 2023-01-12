@@ -130,7 +130,8 @@ class ResnetTransformerClassifier(torch.nn.Module):
         # x = torch.cat([x, pos], dim=2)  # XXX concat positional embeddings
         x = x + pos
         bs, ss, ds = x.shape
-        cls = (torch.ones(bs, 1, ds) / (bs * ds)).to(x.device)  # generate cls tokens
+        cls = (torch.ones(bs, 1, ds) / (bs * ds)).to(
+            x.device)  # generate cls tokens
         x = torch.cat([cls, x], axis=1)  # staple cls tokens to the front
         x = self.transformer_encoder(x)  # pass through transformer encoder
         x = self.fc(x[:, 0, :])  # pass through fully-connected layer
@@ -205,6 +206,28 @@ if __name__ == '__main__':
 
     log.info(args.__dict__)
 
+    try:
+        # import wandb
+        wandb.init(project="geospatial-time-series")
+        wandb.config = {
+            "learning_rate": args.lr,
+            "training_batches": args.train_batches,
+            "eval_batches": args.eval_batches,
+            "epochs": args.epochs,
+            "batch_size": args.batch_size,
+            "gamma": args.gamma,
+            "sequence_limit": args.sequence_limit,
+            "image_size": args.size,
+            "dimensions": args.dimensions,
+            "architectures": args.architecture,
+            "resnet_architecture": args.resnet_architecture,
+            "transformer_encoder_layers": args.encoder_layers,
+            "transformer_num_heads": args.num_heads,
+            "dataset": args.dataset,
+        }
+    except:
+        log.info('No wandb')
+
     # ------------------------------------------------------------------------
 
     if args.dataset == 'in-memory-seasonal':
@@ -212,28 +235,33 @@ if __name__ == '__main__':
         assert isinstance(args.target, str)
         assert args.train_batches is not None
         assert args.eval_batches is not None
-        ds = InMemorySeasonalDataset
 
-    train_dl = torch.utils.data.DataLoader(
-        ds(args.series,
-           args.target,
-           args.size,
-           512,
-           args.sequence_limit,
-           digest_labels=True,
-           evaluation=False),
-        **dataloader_cfg,
-    )
-    eval_dl = torch.utils.data.DataLoader(
-        ds(args.series,
-           args.target,
-           args.size,
-           512,
-           args.sequence_limit,
-           digest_labels=True,
-           evaluation=True),
-        **dataloader_cfg,
-    )
+        bs = args.batch_size
+        tb = args.train_batches
+        eb = args.eval_batches
+        nw = args.num_workers if args.num_workers > 0 else 1
+        train_dl = torch.utils.data.DataLoader(
+            InMemorySeasonalDataset(args.series,
+                                    args.target,
+                                    iters_per_incr=(bs * tb) // nw,
+                                    size=args.size,
+                                    dimensions=512,
+                                    sequence_limit=args.sequence_limit,
+                                    digest_labels=True,
+                                    evaluation=False),
+            **dataloader_cfg,
+        )
+        eval_dl = torch.utils.data.DataLoader(
+            InMemorySeasonalDataset(args.series,
+                                    args.target,
+                                    iters_per_incr=(bs * eb) // nw,
+                                    size=args.size,
+                                    dimensions=512,
+                                    sequence_limit=args.sequence_limit,
+                                    digest_labels=True,
+                                    evaluation=True),
+            **dataloader_cfg,
+        )
 
     if args.dataset == 'in-memory-seasonal':
         train_dl = iter(train_dl)
@@ -314,6 +342,10 @@ if __name__ == '__main__':
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
+                try:
+                    wandb.watch(model)
+                except:
+                    pass
 
             loss_float = np.mean(loss_float)
 
@@ -331,6 +363,10 @@ if __name__ == '__main__':
             # yapf: enable
         else:
             log.info(f'✗ Epoch={epoch} train={loss_t} eval={loss_e}')
+        try:
+            wandb.log({"train_loss": loss_t, "eval_loss": loss_e})
+        except:
+            pass
 
     # yapf: disable
     if args.output_dir:

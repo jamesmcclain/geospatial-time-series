@@ -14,13 +14,14 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
     def __init__(self,
                  series_paths: List[str],
                  label_path: str,
+                 iters_per_incr: int,
                  size: int = 32,
                  dimensions: int = 512,
                  sequence_limit: int = 10,
                  digest_labels: bool = False,
                  evaluation: bool = False):
-        assert dimensions % 2 == 0
         self.size = size
+        assert dimensions % 2 == 0
         self.dimensions = dimensions
         self.sequence_limit = min(sequence_limit, len(series_paths))
         self.digest_labels = digest_labels
@@ -33,6 +34,10 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
         self.width = None
         self.height = None
         self.bands = None
+
+        self.iters = 0
+        assert iters_per_incr > 0
+        self.iters_per_incr = iters_per_incr
 
         self.pos_template = np.zeros((1, self.dimensions))
         x = np.power(8, 2.0 / dimensions)
@@ -102,10 +107,13 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
 
         # Sample from a subset of the mosaics
         ss, _, _, _ = imagery.shape
-        indxs = random.sample(range(0, ss), self.sequence_limit)
+        offset = self.iters // self.iters_per_incr
+        indxs = np.arange(0, self.sequence_limit, dtype=np.uint32)
+        indxs = (indxs + offset) % ss
         imagery = imagery[indxs]
         pos_encoding = self.pos_encoding[indxs]
 
+        self.iters = self.iters + 1
         return (imagery, labels, pos_encoding)
 
 
