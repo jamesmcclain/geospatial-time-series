@@ -228,6 +228,8 @@ if __name__ == '__main__':
                 "transformer_encoder_layers": args.encoder_layers,
                 "transformer_num_heads": args.num_heads,
                 "dataset": args.dataset,
+                "train_ipi": args.train_ipi,
+                "eval_ipi": args.eval_ipi,
             })
     except:
         log.info('No wandb')
