@@ -59,6 +59,8 @@ def cli_parser():
     parser.add_argument('--lr', required=False, type=float, default=3e-4)
 
     parser.add_argument('--sequence-limit', required=False, type=int, default=10)
+    parser.add_argument('--train-ipi', required=False, type=int, default=None)
+    parser.add_argument('--eval-ipi', required=False, type=int, default=None)
 
     # Other
     parser.add_argument('--num-workers', required=False, type=int, default=8)
@@ -187,7 +189,8 @@ class AttentionClassifier(BaselineClassifier):
         x = x.reshape(bs, ss, ds, xs, ys)
         x = torch.mean(x, dim=(3, 4))  # average embeddings
         weights = self.poor_mans_attention(pos)
-        x = torch.mean(x * weights, dim=1)
+        x = torch.sum(x * weights, dim=1)
+        x = torch.nn.functional.normalize(x, p=1.0, dim=1)
         x = self.fc(x)  # pass through fully-connected layer
         return x
 
@@ -207,24 +210,25 @@ if __name__ == '__main__':
     log.info(args.__dict__)
 
     try:
-        # import wandb
-        wandb.init(project="geospatial-time-series")
-        wandb.config = {
-            "learning_rate": args.lr,
-            "training_batches": args.train_batches,
-            "eval_batches": args.eval_batches,
-            "epochs": args.epochs,
-            "batch_size": args.batch_size,
-            "gamma": args.gamma,
-            "sequence_limit": args.sequence_limit,
-            "image_size": args.size,
-            "dimensions": args.dimensions,
-            "architectures": args.architecture,
-            "resnet_architecture": args.resnet_architecture,
-            "transformer_encoder_layers": args.encoder_layers,
-            "transformer_num_heads": args.num_heads,
-            "dataset": args.dataset,
-        }
+        import wandb
+        wandb.init(
+            project="geospatial-time-series",
+            config={
+                "learning_rate": args.lr,
+                "training_batches": args.train_batches,
+                "eval_batches": args.eval_batches,
+                "epochs": args.epochs,
+                "batch_size": args.batch_size,
+                "gamma": args.gamma,
+                "sequence_limit": args.sequence_limit,
+                "image_size": args.size,
+                "dimensions": args.dimensions,
+                "architectures": args.architecture,
+                "resnet_architecture": args.resnet_architecture,
+                "transformer_encoder_layers": args.encoder_layers,
+                "transformer_num_heads": args.num_heads,
+                "dataset": args.dataset,
+            })
     except:
         log.info('No wandb')
 
@@ -240,10 +244,19 @@ if __name__ == '__main__':
         tb = args.train_batches
         eb = args.eval_batches
         nw = args.num_workers if args.num_workers > 0 else 1
+        if args.train_ipi is None:
+            train_ipi = (bs * tb) // nw
+        else:
+            train_ipi = args.train_ipi
+        if args.eval_ipi is None:
+            eval_ipi = (bs * eb) // nw
+        else:
+            eval_ipi = args.eval_ipi
+
         train_dl = torch.utils.data.DataLoader(
             InMemorySeasonalDataset(args.series,
                                     args.target,
-                                    iters_per_incr=(bs * tb) // nw,
+                                    iters_per_incr=train_ipi,
                                     size=args.size,
                                     dimensions=512,
                                     sequence_limit=args.sequence_limit,
@@ -254,7 +267,7 @@ if __name__ == '__main__':
         eval_dl = torch.utils.data.DataLoader(
             InMemorySeasonalDataset(args.series,
                                     args.target,
-                                    iters_per_incr=(bs * eb) // nw,
+                                    iters_per_incr=eval_ipi,
                                     size=args.size,
                                     dimensions=512,
                                     sequence_limit=args.sequence_limit,
@@ -317,35 +330,41 @@ if __name__ == '__main__':
             loss_float = []
             if mode == 'train':
                 model.train()
-                dl = train_dl
                 batches = args.train_batches
-                desc = f'Epoch {epoch}: training'
+                for _ in tqdm.tqdm(range(0, batches), desc=f'Epoch {epoch}: training'):
+                    batch = next(train_dl)
+                    x = batch[0].to(device)
+                    pos = batch[2].to(device)
+                    target = batch[1].to(device)
+                    # yapf: disable
+                    if args.architecture in {'attention-classifier', 'resnet-transformer-classifier'}:
+                        out = model(x, pos)
+                    elif args.architecture in {'baseline-classifier'}:
+                        out = model(x)
+                    # yapf: enable
+                    loss = obj1(out, target)
+                    loss_float.append(loss.item())
+
+                    opt.zero_grad()
+                    loss.backward()
+                    opt.step()
             elif mode == 'eval':
                 model.eval()
-                dl = eval_dl
                 batches = args.eval_batches
-                desc = f'Epoch {epoch}: evaluation'
-            for _ in tqdm.tqdm(range(0, batches), desc=desc):
-                batch = next(dl)
-                x = batch[0].to(device)
-                pos = batch[2].to(device)
-                target = batch[1].to(device)
-                # yapf: disable
-                if args.architecture in {'attention-classifier', 'resnet-transformer-classifier'}:
-                    out = model(x, pos)
-                elif args.architecture in {'baseline-classifier'}:
-                    out = model(x)
-                # yapf: enable
-                loss = obj1(out, target)
-                loss_float.append(loss.item())
-
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-                try:
-                    wandb.watch(model)
-                except:
-                    pass
+                with torch.no_grad():
+                    for _ in tqdm.tqdm(range(0, batches), desc=f'Epoch {epoch}: evaluation'):
+                        batch = next(eval_dl)
+                        x = batch[0].to(device)
+                        pos = batch[2].to(device)
+                        target = batch[1].to(device)
+                        # yapf: disable
+                        if args.architecture in {'attention-classifier', 'resnet-transformer-classifier'}:
+                            out = model(x, pos)
+                        elif args.architecture in {'baseline-classifier'}:
+                            out = model(x)
+                        # yapf: enable
+                        loss = obj1(out, target)
+                        loss_float.append(loss.item())
 
             loss_float = np.mean(loss_float)
 
