@@ -189,8 +189,14 @@ class AttentionClassifier(BaselineClassifier):
         x = x.reshape(bs, ss, ds, xs, ys)
         x = torch.mean(x, dim=(3, 4))  # average embeddings
         weights = self.poor_mans_attention(pos)
-        x = torch.sum(x * weights, dim=1)
-        x = torch.nn.functional.normalize(x, p=1.0, dim=1)
+        if False:
+            x = torch.sum(x * weights, dim=1)
+            x = torch.nn.functional.normalize(x, p=1.0, dim=1)
+        elif False:
+            x = torch.mean(x * weights, dim=1)
+        else:
+            x = torch.sum(x * weights, dim=1)
+            x = torch.nn.functional.normalize(x, p=2.0, dim=1)
         x = self.fc(x)  # pass through fully-connected layer
         return x
 
