@@ -229,7 +229,7 @@ if __name__ == '__main__':
                 "sequence_limit": args.sequence_limit,
                 "image_size": args.size,
                 "dimensions": args.dimensions,
-                "architectures": args.architecture,
+                "architecture": args.architecture,
                 "resnet_architecture": args.resnet_architecture,
                 "transformer_encoder_layers": args.encoder_layers,
                 "transformer_num_heads": args.num_heads,
