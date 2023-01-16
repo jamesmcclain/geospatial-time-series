@@ -100,11 +100,12 @@ if __name__ == '__main__':
 
         model.eval()
         loss_e = 0.0
-        for j in tqdm.tqdm(range(0, args.eval_batches)):
-            batch = next(eval_dl)
-            out = model(batch[0].to(device))
-            loss_e = loss_e + obj(out, batch[1].to(device)).item()
-        loss_e /= float(args.eval_batches)
+        with torch.no_grad():
+            for j in tqdm.tqdm(range(0, args.eval_batches)):
+                batch = next(eval_dl)
+                out = model(batch[0].to(device))
+                loss_e = loss_e + obj(out, batch[1].to(device)).item()
+            loss_e /= float(args.eval_batches)
 
         log.info(f'Epoch={i} train={loss_t} eval={loss_e}')
         if loss_e < best:
