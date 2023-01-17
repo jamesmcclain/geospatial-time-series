@@ -13,7 +13,7 @@ import torchvision as tv
 import tqdm
 from PIL import Image
 
-from dataset import NpzSeriesDataset
+from dataset import InMemorySeasonalDataset, NpzSeriesDataset, RawSeriesDataset
 
 
 def worker_init_fn(i):
@@ -33,25 +33,37 @@ def cli_parser():
     # yapf: disable
     parser = argparse.ArgumentParser()
 
+    # Dataset, model type, input, output
+    parser.add_argument('--architecture', required=True, type=str, choices=['baseline-classifier', 'attention-classifier', 'resnet-transformer-classifier'])
+    parser.add_argument('--dataset', required=True, type=str, choices=['in-memory-seasonal'])
+    parser.add_argument('--input-dir', required=False, type=str)
+    parser.add_argument('--output-dir', required=False, type=str)
+    parser.add_argument('--resnet-architecture', required=False, type=str, choices=['resnet18', 'resnet34', 'resnet50'])
+    parser.add_argument('--resnet-state', required=False, type=str)
+    parser.add_argument('--series', required=False, type=str, nargs='+')
+    parser.add_argument('--size', required=False, type=int, default=256)
+    parser.add_argument('--target', required=False, type=str)
+
     # Hyperparameters
+    parser.add_argument('--eval-batches', required=False, type=int)
+    parser.add_argument('--train-batches', required=False, type=int)
+    parser.add_argument('--batch-size', required=False, type=int, default=16)
+
     parser.add_argument('--dimensions', required=False, type=int, default=512)
-    parser.add_argument('--num-heads', required=False, type=int, default=1)
     parser.add_argument('--encoder-layers', required=False, type=int, default=1)
+    parser.add_argument('--num-heads', required=False, type=int, default=1)
+
+    # parser.add_argument('--entropy', dest='entropy', default=False, action='store_true')
+    parser.add_argument('--epochs', required=False, type=int, default=2**7)
     parser.add_argument('--gamma', required=False, type=float, default=0.7)
     parser.add_argument('--lr', required=False, type=float, default=3e-4)
-    parser.add_argument('--entropy', dest='entropy', default=False, action='store_true')
-    parser.add_argument('--bce', dest='bce', default=False, action='store_true')
 
-    # Other hyperparameters
-    parser.add_argument('--batch-size', required=False, type=int, default=16)
-    parser.add_argument('--epochs', required=False, type=int, default=2**7)
+    parser.add_argument('--sequence-limit', required=False, type=int, default=10)
+    parser.add_argument('--train-ipi', required=False, type=int, default=None)
+    parser.add_argument('--eval-ipi', required=False, type=int, default=None)
 
     # Other
     parser.add_argument('--num-workers', required=False, type=int, default=8)
-    parser.add_argument('--input-dir', required=True, type=str)
-    parser.add_argument('--output-dir', required=False, type=str, default=None)
-    parser.add_argument('--tiles', dest='tiles', default=False, action='store_true')
-    parser.add_argument('--png', dest='png', default=False, action='store_true')
 
     return parser
     # yapf: enable
@@ -83,19 +95,110 @@ class EntropyLoss(torch.nn.Module):
         return retval
 
 
-class TransformerModel(torch.nn.Module):
+class ResnetTransformerClassifier(torch.nn.Module):
 
-    def __init__(self, dimensions=512, num_heads=1, encoder_layers=1):
+    def __init__(self, arch, state, d_model, nhead, num_layers):
         super().__init__()
-        encoder_layer = torch.nn.TransformerEncoderLayer(d_model=dimensions,
-                                                         nhead=num_heads,
-                                                         batch_first=True)
-        self.transformer_encoder = torch.nn.TransformerEncoder(
-            encoder_layer, num_layers=encoder_layers)
+        self.embed = torch.hub.load(
+            'jamesmcclain/pytorch-fpn:02eb7d4a3b47db22ec30804a92713a08acff6af8',
+            'make_fpn_resnet',
+            name=arch,
+            fpn_type='panoptic',
+            num_classes=6,
+            fpn_channels=256,
+            in_channels=12,
+            out_size=(args.size, args.size)).to(device)
+        self.embed.load_state_dict(torch.load(state), strict=True)
+        self.embed = self.embed[0]
 
-    def forward(self, source_seq):
-        out = self.transformer_encoder(source_seq)
-        return out
+        encoder_layer = torch.nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            batch_first=True,
+        )
+        self.transformer_encoder = torch.nn.TransformerEncoder(
+            encoder_layer,
+            num_layers=num_layers,
+        )
+
+        self.fc = torch.nn.Linear(d_model, 3)
+
+    def forward(self, x, pos):
+        bs, ss, cs, xs, ys = x.shape
+        x = self.embed(x.reshape(-1, cs, xs, ys))  # embed
+        x = x[-1]  # get last output from resnet backbone
+        x = torch.mean(x, dim=(2, 3))  # pool the ~8x8 embeddings
+        x = x.reshape(bs, ss, -1)  # shape: batch x seq x embeddings
+        # x = torch.cat([x, pos], dim=2)  # XXX concat positional embeddings
+        x = x + pos
+        bs, ss, ds = x.shape
+        cls = (torch.ones(bs, 1, ds) / (bs * ds)).to(
+            x.device)  # generate cls tokens
+        x = torch.cat([cls, x], axis=1)  # staple cls tokens to the front
+        x = self.transformer_encoder(x)  # pass through transformer encoder
+        x = self.fc(x[:, 0, :])  # pass through fully-connected layer
+        return x
+
+
+class BaselineClassifier(torch.nn.Module):
+
+    def __init__(self, arch, state, d_model: int = 512):
+        super().__init__()
+        self.embed = torch.hub.load(
+            'jamesmcclain/pytorch-fpn:02eb7d4a3b47db22ec30804a92713a08acff6af8',
+            'make_fpn_resnet',
+            name=arch,
+            fpn_type='panoptic',
+            num_classes=6,
+            fpn_channels=256,
+            in_channels=12,
+            out_size=(args.size, args.size)).to(device)
+        self.embed.load_state_dict(torch.load(state), strict=True)
+        self.embed = self.embed[0]
+        self.fc = torch.nn.Linear(d_model, 3)
+
+    def forward(self, x):
+        bs, ss, cs, xs, ys = x.shape
+        x = self.embed(x.reshape(-1, cs, xs, ys))  # embed
+        x = x[-1]  # get last output from resnet backbone
+        _, ds, xs, ys = x.shape
+        x = x.reshape(bs, ss, ds, xs, ys)
+        x = torch.mean(x, dim=(1, 3, 4))  # average embeddings
+        x = self.fc(x)  # pass through fully-connected layer
+        return x
+
+
+class AttentionClassifier(BaselineClassifier):
+
+    def __init__(self, arch, state, d_model: int = 512):
+        super().__init__(arch, state, d_model)
+        self.poor_mans_attention = torch.nn.Sequential(
+            torch.nn.Linear(d_model, d_model),
+            torch.nn.ReLU(),
+            torch.nn.Linear(d_model, d_model // 2),
+            torch.nn.ReLU(),
+            torch.nn.Linear(d_model // 2, 1),
+            torch.nn.ReLU(),
+        )
+
+    def forward(self, x, pos):
+        bs, ss, cs, xs, ys = x.shape
+        x = self.embed(x.reshape(-1, cs, xs, ys))  # embed
+        x = x[-1]  # get last output from resnet backbone
+        _, ds, xs, ys = x.shape
+        x = x.reshape(bs, ss, ds, xs, ys)
+        x = torch.mean(x, dim=(3, 4))  # average embeddings
+        weights = self.poor_mans_attention(pos)
+        if False:
+            x = torch.sum(x * weights, dim=1)
+            x = torch.nn.functional.normalize(x, p=1.0, dim=1)
+        elif False:
+            x = torch.mean(x * weights, dim=1)
+        else:
+            x = torch.sum(x * weights, dim=1)
+            x = torch.nn.functional.normalize(x, p=2.0, dim=1)
+        x = self.fc(x)  # pass through fully-connected layer
+        return x
 
 
 if __name__ == '__main__':
@@ -110,140 +213,189 @@ if __name__ == '__main__':
     dataloader_cfg['batch_size'] = args.batch_size
     dataloader_cfg['num_workers'] = args.num_workers
 
-    if not args.tiles:
+    log.info(args.__dict__)
+
+    try:
+        import wandb
+        wandb.init(
+            project="geospatial-time-series",
+            config={
+                "learning_rate": args.lr,
+                "training_batches": args.train_batches,
+                "eval_batches": args.eval_batches,
+                "epochs": args.epochs,
+                "batch_size": args.batch_size,
+                "gamma": args.gamma,
+                "sequence_limit": args.sequence_limit,
+                "image_size": args.size,
+                "dimensions": args.dimensions,
+                "architecture": args.architecture,
+                "resnet_architecture": args.resnet_architecture,
+                "transformer_encoder_layers": args.encoder_layers,
+                "transformer_num_heads": args.num_heads,
+                "dataset": args.dataset,
+                "train_ipi": args.train_ipi,
+                "eval_ipi": args.eval_ipi,
+            })
+    except:
+        log.info('No wandb')
+
+    # ------------------------------------------------------------------------
+
+    if args.dataset == 'in-memory-seasonal':
+        assert isinstance(args.series, list)
+        assert isinstance(args.target, str)
+        assert args.train_batches is not None
+        assert args.eval_batches is not None
+
+        bs = args.batch_size
+        tb = args.train_batches
+        eb = args.eval_batches
+        nw = args.num_workers if args.num_workers > 0 else 1
+        if args.train_ipi is None:
+            train_ipi = (bs * tb) // nw
+        else:
+            train_ipi = args.train_ipi
+        if args.eval_ipi is None:
+            eval_ipi = (bs * eb) // nw
+        else:
+            eval_ipi = args.eval_ipi
+
         train_dl = torch.utils.data.DataLoader(
-            NpzSeriesDataset(f"{args.input_dir}/train",
-                             narrow=True,
-                             tiles=False),
+            InMemorySeasonalDataset(args.series,
+                                    args.target,
+                                    iters_per_incr=train_ipi,
+                                    size=args.size,
+                                    dimensions=512,
+                                    sequence_limit=args.sequence_limit,
+                                    digest_labels=True,
+                                    evaluation=False),
             **dataloader_cfg,
         )
         eval_dl = torch.utils.data.DataLoader(
-            NpzSeriesDataset(f"{args.input_dir}/eval",
-                             narrow=True,
-                             tiles=False),
-            **dataloader_cfg,
-        )
-    else:
-        train_dl = torch.utils.data.DataLoader(
-            NpzSeriesDataset(f"{args.input_dir}/train",
-                             narrow=False,
-                             tiles=True),
-            **dataloader_cfg,
-        )
-        eval_dl = torch.utils.data.DataLoader(
-            NpzSeriesDataset(f"{args.input_dir}/eval",
-                             narrow=False,
-                             tiles=True),
+            InMemorySeasonalDataset(args.series,
+                                    args.target,
+                                    iters_per_incr=eval_ipi,
+                                    size=args.size,
+                                    dimensions=512,
+                                    sequence_limit=args.sequence_limit,
+                                    digest_labels=True,
+                                    evaluation=True),
             **dataloader_cfg,
         )
 
-    if not args.tiles or args.output_dir is None:
-        args.png = False
+    if args.dataset == 'in-memory-seasonal':
+        train_dl = iter(train_dl)
+        eval_dl = iter(eval_dl)
 
-    if args.png:
-        tile_count = len(eval_dl) * args.batch_size
-        tile_count = math.ceil(math.sqrt(tile_count))
-        tile_pixels = int(math.sqrt(args.dimensions))
-        current = 0
-        s = (tile_count * tile_pixels, tile_count * tile_pixels)
-        all_tiles = np.zeros(s, dtype=np.uint8)
-        for batch in eval_dl:
-            for tile in batch[1].detach().cpu().numpy():
-                y = (current // tile_count)*tile_pixels
-                x = (current % tile_count)* tile_pixels
-                current = current + 1
-                tile = tile * 0xff
-                tile = tile.astype(np.uint8).reshape(tile_pixels, tile_pixels)
-                all_tiles[x:x+tile_pixels, y:y+tile_pixels] = tile
-        filename = f'{args.output_dir}/0000.png'
-        Image.fromarray(all_tiles).save(filename)
-        # log.info(f'{filename} saved')
+    # ------------------------------------------------------------------------
 
     device = torch.device('cuda')
-    model = TransformerModel(dimensions=args.dimensions,
-                             num_heads=args.num_heads,
-                             encoder_layers=args.encoder_layers).to(device)
+    if args.architecture == 'series-resnet-classifier':
+        assert args.resnet_architecture is not None
+        assert args.resnet_state is not None
+        assert args.dimensions is not None
+        assert args.num_heads is not None
+        assert args.encoder_layers is not None
+        model = ResnetTransformerClassifier(
+            args.resnet_architecture,
+            args.resnet_state,
+            # args.dimensions + 512,
+            args.dimensions + 0,
+            args.num_heads,
+            args.encoder_layers,
+        ).to(device)
+    elif args.architecture == 'attention-classifier':
+        assert args.resnet_architecture is not None
+        assert args.resnet_state is not None
+        assert args.dimensions is not None
+        model = AttentionClassifier(
+            args.resnet_architecture,
+            args.resnet_state,
+            args.dimensions,
+        ).to(device)
+    elif args.architecture == 'baseline-classifier':
+        assert args.resnet_architecture is not None
+        assert args.resnet_state is not None
+        assert args.dimensions is not None
+        model = BaselineClassifier(
+            args.resnet_architecture,
+            args.resnet_state,
+            args.dimensions,
+        ).to(device)
 
-    if args.bce:
-        obj1 = torch.nn.BCEWithLogitsLoss().to(device)
-    else:
-        obj1 = torch.nn.L1Loss().to(device)
-    obj2 = EntropyLoss().to(device)
+    obj1 = torch.nn.MSELoss().to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
     sched = torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=args.gamma)
 
-    log.info(args.__dict__)
+    # ------------------------------------------------------------------------
 
     best = math.inf
     for epoch in range(1, args.epochs + 1):
 
         current = 0
         for mode in ['train', 'eval']:
-            loss_float = 0.0
+            loss_float = []
             if mode == 'train':
                 model.train()
-                dl = train_dl
+                batches = args.train_batches
+                for _ in tqdm.tqdm(range(0, batches), desc=f'Epoch {epoch}: training'):
+                    batch = next(train_dl)
+                    x = batch[0].to(device)
+                    pos = batch[2].to(device)
+                    target = batch[1].to(device)
+                    # yapf: disable
+                    if args.architecture in {'attention-classifier', 'resnet-transformer-classifier'}:
+                        out = model(x, pos)
+                    elif args.architecture in {'baseline-classifier'}:
+                        out = model(x)
+                    # yapf: enable
+                    loss = obj1(out, target)
+                    loss_float.append(loss.item())
+
+                    opt.zero_grad()
+                    loss.backward()
+                    opt.step()
             elif mode == 'eval':
                 model.eval()
-                dl = eval_dl
-            for batch in tqdm.tqdm(dl):
-                out = model(batch[0].to(device))
-                target = batch[1].to(device)
+                batches = args.eval_batches
+                with torch.no_grad():
+                    for _ in tqdm.tqdm(range(0, batches), desc=f'Epoch {epoch}: evaluation'):
+                        batch = next(eval_dl)
+                        x = batch[0].to(device)
+                        pos = batch[2].to(device)
+                        target = batch[1].to(device)
+                        # yapf: disable
+                        if args.architecture in {'attention-classifier', 'resnet-transformer-classifier'}:
+                            out = model(x, pos)
+                        elif args.architecture in {'baseline-classifier'}:
+                            out = model(x)
+                        # yapf: enable
+                        loss = obj1(out, target)
+                        loss_float.append(loss.item())
 
-                # _, S, _ = out.shape
-                loss = obj1(out[:, 0, :], target)
-                # loss = obj1(out[:, 0, :], batch[0][:, 0, :].to(device))
-                # for s in range(1, S):
-                #     loss += obj1(out[:, s, :], target)
-                # loss /= float(S)
-                if args.entropy:
-                    if args.bce:
-                        loss = loss - (float(epoch)/args.epochs) * torch.mean(obj2(torch.sigmoid(out)))
-                    else:
-                        loss = loss - (float(epoch)/args.epochs) * torch.mean(obj2(out))
-                loss_float += loss.item()
-
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-
-                if args.png and mode == 'eval':
-                    for tile in out[:, 0, :]:
-                        if args.bce:
-                            tile = torch.sigmoid(tile)
-                        tile = tile.detach().cpu().numpy()
-                        y = (current // tile_count)*tile_pixels
-                        x = (current % tile_count)* tile_pixels
-                        current = current + 1
-                        tile = tile * 0xff
-                        tile[tile < 0] = 0
-                        tile[tile > 0xff] = 0xff
-                        tile = tile.astype(np.uint8).reshape(tile_pixels, tile_pixels)
-                        all_tiles[x:x+tile_pixels, y:y+tile_pixels] = tile
-
-            loss_float /= float(len(dl))
+            loss_float = np.mean(loss_float)
 
             if mode == 'train':
                 loss_t = loss_float
             elif mode == 'eval':
                 loss_e = loss_float
 
-            if args.png and mode == 'eval':
-                filename = f'{args.output_dir}/{epoch:04}.png'
-                Image.fromarray(all_tiles).save(filename)
-                # log.info(f'{filename} saved')
-
         if loss_e < best:
             best = loss_e
             log.info(f'✓ Epoch={epoch} train={loss_t} eval={loss_e}')
             # yapf: disable
             if args.output_dir:
-                torch.save(model.state_dict(), f'{args.output_dir}/transformer-best.pth')
+                torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}.pth')
             # yapf: enable
         else:
             log.info(f'✗ Epoch={epoch} train={loss_t} eval={loss_e}')
+        try:
+            wandb.log({"train_loss": loss_t, "eval_loss": loss_e})
+        except:
+            pass
 
     # yapf: disable
     if args.output_dir:
-        torch.save(model.state_dict(), f'{args.output_dir}/transformer-last.pth')
+        torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}.pth')
     # yapf: enable
