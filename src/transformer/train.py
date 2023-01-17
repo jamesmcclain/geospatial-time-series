@@ -386,7 +386,7 @@ if __name__ == '__main__':
             log.info(f'✓ Epoch={epoch} train={loss_t} eval={loss_e}')
             # yapf: disable
             if args.output_dir:
-                torch.save(model.state_dict(), f'{args.output_dir}/transformer-best.pth')
+                torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}.pth')
             # yapf: enable
         else:
             log.info(f'✗ Epoch={epoch} train={loss_t} eval={loss_e}')
@@ -397,5 +397,5 @@ if __name__ == '__main__':
 
     # yapf: disable
     if args.output_dir:
-        torch.save(model.state_dict(), f'{args.output_dir}/transformer-last.pth')
+        torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}.pth')
     # yapf: enable
