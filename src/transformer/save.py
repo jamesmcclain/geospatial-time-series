@@ -13,7 +13,7 @@ import torch
 import torchvision as tv
 import tqdm
 
-from dataset import RawSeriesDataset
+from datasets import RawSeriesDataset
 
 
 def worker_init_fn(i):

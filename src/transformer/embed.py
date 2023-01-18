@@ -13,7 +13,7 @@ import torch
 import torchvision as tv
 import tqdm
 
-from dataset import NpzSeriesDataset
+from datasets import NpzSeriesDataset
 
 
 def worker_init_fn(i):
