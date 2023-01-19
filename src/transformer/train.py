@@ -13,8 +13,10 @@ import torchvision as tv
 import tqdm
 from PIL import Image
 
-from datasets import InMemorySeasonalDataset, NpzSeriesDataset, RawSeriesDataset
-from models import EntropyLoss, ResnetTransformerClassifier, BaselineClassifier
+from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
+                      RawSeriesDataset)
+from models import (AttentionClassifier, BaselineClassifier, EntropyLoss,
+                    ResnetTransformerClassifier)
 
 
 def worker_init_fn(i):
@@ -64,7 +66,7 @@ def cli_parser():
     parser.add_argument('--eval-ipi', required=False, type=int, default=None)
 
     # Other
-    parser.add_argument('--num-workers', required=False, type=int, default=8)
+    parser.add_argument('--num-workers', required=False, type=int, default=1)
 
     return parser
     # yapf: enable
@@ -86,26 +88,25 @@ if __name__ == '__main__':
 
     try:
         import wandb
-        wandb.init(
-            project="geospatial-time-series",
-            config={
-                "learning_rate": args.lr,
-                "training_batches": args.train_batches,
-                "eval_batches": args.eval_batches,
-                "epochs": args.epochs,
-                "batch_size": args.batch_size,
-                "gamma": args.gamma,
-                "sequence_limit": args.sequence_limit,
-                "image_size": args.size,
-                "dimensions": args.dimensions,
-                "architecture": args.architecture,
-                "resnet_architecture": args.resnet_architecture,
-                "transformer_encoder_layers": args.encoder_layers,
-                "transformer_num_heads": args.num_heads,
-                "dataset": args.dataset,
-                "train_ipi": args.train_ipi,
-                "eval_ipi": args.eval_ipi,
-            })
+        wandb.init(project="geospatial-time-series",
+                   config={
+                       "learning_rate": args.lr,
+                       "training_batches": args.train_batches,
+                       "eval_batches": args.eval_batches,
+                       "epochs": args.epochs,
+                       "batch_size": args.batch_size,
+                       "gamma": args.gamma,
+                       "sequence_limit": args.sequence_limit,
+                       "image_size": args.size,
+                       "dimensions": args.dimensions,
+                       "architecture": args.architecture,
+                       "resnet_architecture": args.resnet_architecture,
+                       "transformer_encoder_layers": args.encoder_layers,
+                       "transformer_num_heads": args.num_heads,
+                       "dataset": args.dataset,
+                       "train_ipi": args.train_ipi,
+                       "eval_ipi": args.eval_ipi,
+                   })
     except:
         log.info('No wandb')
 
@@ -169,6 +170,7 @@ if __name__ == '__main__':
         model = ResnetTransformerClassifier(
             args.resnet_architecture,
             args.resnet_state,
+            args.size,
             # args.dimensions + 512,
             args.dimensions + 0,
             args.num_heads,
@@ -181,6 +183,7 @@ if __name__ == '__main__':
         model = AttentionClassifier(
             args.resnet_architecture,
             args.resnet_state,
+            args.size,
             args.dimensions,
         ).to(device)
     elif args.architecture == 'baseline-classifier':
@@ -190,6 +193,7 @@ if __name__ == '__main__':
         model = BaselineClassifier(
             args.resnet_architecture,
             args.resnet_state,
+            args.size,
             args.dimensions,
         ).to(device)
 
@@ -208,7 +212,8 @@ if __name__ == '__main__':
             if mode == 'train':
                 model.train()
                 batches = args.train_batches
-                for _ in tqdm.tqdm(range(0, batches), desc=f'Epoch {epoch}: training'):
+                for _ in tqdm.tqdm(range(0, batches),
+                                   desc=f'Epoch {epoch}: training'):
                     batch = next(train_dl)
                     x = batch[0].to(device)
                     pos = batch[2].to(device)
@@ -228,8 +233,11 @@ if __name__ == '__main__':
             elif mode == 'eval':
                 model.eval()
                 batches = args.eval_batches
+                gts = []
+                preds = []
                 with torch.no_grad():
-                    for _ in tqdm.tqdm(range(0, batches), desc=f'Epoch {epoch}: evaluation'):
+                    for _ in tqdm.tqdm(range(0, batches),
+                                       desc=f'Epoch {epoch}: evaluation'):
                         batch = next(eval_dl)
                         x = batch[0].to(device)
                         pos = batch[2].to(device)
@@ -240,8 +248,18 @@ if __name__ == '__main__':
                         elif args.architecture in {'baseline-classifier'}:
                             out = model(x)
                         # yapf: enable
+                        gt = batch[1].detach().cpu().numpy()
+                        pred = out.detach().cpu().numpy()
+                        gts.append(gt)
+                        preds.append(pred)
                         loss = obj1(out, target)
                         loss_float.append(loss.item())
+
+                gts = np.concatenate(gts, axis=0)
+                preds = np.concatenate(preds, axis=0)
+                mus = np.mean(diffs, axis=0)
+                absmus = np.mean(np.absolute(diffs), axis=0)
+                sigmas = np.sqrt(np.mean(np.power(diffs, 2), axis=0))
 
             loss_float = np.mean(loss_float)
 
@@ -250,17 +268,26 @@ if __name__ == '__main__':
             elif mode == 'eval':
                 loss_e = loss_float
 
+        # yapf: disable
         if loss_e < best:
             best = loss_e
-            log.info(f'✓ Epoch={epoch} train={loss_t} eval={loss_e}')
-            # yapf: disable
+            log.info(f'✓ Epoch={epoch} train={loss_t} eval={loss_e} μ={mus} σ={sigmas}')
             if args.output_dir:
                 torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}.pth')
-            # yapf: enable
         else:
-            log.info(f'✗ Epoch={epoch} train={loss_t} eval={loss_e}')
+            log.info(f'✗ Epoch={epoch} train={loss_t} eval={loss_e} μ={mus} σ={sigmas}')
+        # yapf: enable
         try:
-            wandb.log({"train_loss": loss_t, "eval_loss": loss_e})
+            wandb.log({
+                "train_loss": loss_t,
+                "eval_loss": loss_e,
+                "farm μ": mus[0],
+                "forest μ": mus[1],
+                "roads μ": mus[2],
+                "farm σ": sigmas[0],
+                "forest σ": sigmas[1],
+                "roads σ": sigmas[2],
+            })
         except:
             pass
 
