@@ -10,7 +10,7 @@ import torch
 import torchvision as tv
 import tqdm
 
-from dataset import TLDataset
+from datasets import TLDataset
 
 
 def worker_init_fn(i):

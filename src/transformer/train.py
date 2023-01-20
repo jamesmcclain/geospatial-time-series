@@ -13,7 +13,10 @@ import torchvision as tv
 import tqdm
 from PIL import Image
 
-from dataset import InMemorySeasonalDataset, NpzSeriesDataset, RawSeriesDataset
+from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
+                      RawSeriesDataset)
+from models import (AttentionClassifier, BaselineClassifier, EntropyLoss,
+                    ResnetTransformerClassifier)
 
 
 def worker_init_fn(i):
@@ -63,142 +66,10 @@ def cli_parser():
     parser.add_argument('--eval-ipi', required=False, type=int, default=None)
 
     # Other
-    parser.add_argument('--num-workers', required=False, type=int, default=8)
+    parser.add_argument('--num-workers', required=False, type=int, default=1)
 
     return parser
     # yapf: enable
-
-
-# Loss function
-class EntropyLoss(torch.nn.Module):
-
-    def __init__(self, mu: float = None, sigma: float = None):
-        super().__init__()
-        self.mu = mu
-        self.sigma = sigma
-
-    def forward(self, x: torch.Tensor):
-        if self.mu is not None:
-            mu = self.mu
-        else:
-            mu = torch.mean(x)
-
-        if self.sigma is not None:
-            sigma = self.sigma
-        else:
-            sigma = torch.std(x, unbiased=True) + 1e-6
-
-        px = -0.5 * ((x - mu) / sigma)**2
-        px = torch.exp(px) / math.sqrt(2 * math.pi)
-
-        retval = -torch.mean(px * torch.log(px + 1e-6))
-        return retval
-
-
-class ResnetTransformerClassifier(torch.nn.Module):
-
-    def __init__(self, arch, state, d_model, nhead, num_layers):
-        super().__init__()
-        self.embed = torch.hub.load(
-            'jamesmcclain/pytorch-fpn:02eb7d4a3b47db22ec30804a92713a08acff6af8',
-            'make_fpn_resnet',
-            name=arch,
-            fpn_type='panoptic',
-            num_classes=6,
-            fpn_channels=256,
-            in_channels=12,
-            out_size=(args.size, args.size)).to(device)
-        self.embed.load_state_dict(torch.load(state), strict=True)
-        self.embed = self.embed[0]
-
-        encoder_layer = torch.nn.TransformerEncoderLayer(
-            d_model=d_model,
-            nhead=nhead,
-            batch_first=True,
-        )
-        self.transformer_encoder = torch.nn.TransformerEncoder(
-            encoder_layer,
-            num_layers=num_layers,
-        )
-
-        self.fc = torch.nn.Linear(d_model, 3)
-
-    def forward(self, x, pos):
-        bs, ss, cs, xs, ys = x.shape
-        x = self.embed(x.reshape(-1, cs, xs, ys))  # embed
-        x = x[-1]  # get last output from resnet backbone
-        x = torch.mean(x, dim=(2, 3))  # pool the ~8x8 embeddings
-        x = x.reshape(bs, ss, -1)  # shape: batch x seq x embeddings
-        # x = torch.cat([x, pos], dim=2)  # XXX concat positional embeddings
-        x = x + pos
-        bs, ss, ds = x.shape
-        cls = (torch.ones(bs, 1, ds) / (bs * ds)).to(
-            x.device)  # generate cls tokens
-        x = torch.cat([cls, x], axis=1)  # staple cls tokens to the front
-        x = self.transformer_encoder(x)  # pass through transformer encoder
-        x = self.fc(x[:, 0, :])  # pass through fully-connected layer
-        return x
-
-
-class BaselineClassifier(torch.nn.Module):
-
-    def __init__(self, arch, state, d_model: int = 512):
-        super().__init__()
-        self.embed = torch.hub.load(
-            'jamesmcclain/pytorch-fpn:02eb7d4a3b47db22ec30804a92713a08acff6af8',
-            'make_fpn_resnet',
-            name=arch,
-            fpn_type='panoptic',
-            num_classes=6,
-            fpn_channels=256,
-            in_channels=12,
-            out_size=(args.size, args.size)).to(device)
-        self.embed.load_state_dict(torch.load(state), strict=True)
-        self.embed = self.embed[0]
-        self.fc = torch.nn.Linear(d_model, 3)
-
-    def forward(self, x):
-        bs, ss, cs, xs, ys = x.shape
-        x = self.embed(x.reshape(-1, cs, xs, ys))  # embed
-        x = x[-1]  # get last output from resnet backbone
-        _, ds, xs, ys = x.shape
-        x = x.reshape(bs, ss, ds, xs, ys)
-        x = torch.mean(x, dim=(1, 3, 4))  # average embeddings
-        x = self.fc(x)  # pass through fully-connected layer
-        return x
-
-
-class AttentionClassifier(BaselineClassifier):
-
-    def __init__(self, arch, state, d_model: int = 512):
-        super().__init__(arch, state, d_model)
-        self.poor_mans_attention = torch.nn.Sequential(
-            torch.nn.Linear(d_model, d_model),
-            torch.nn.ReLU(),
-            torch.nn.Linear(d_model, d_model // 2),
-            torch.nn.ReLU(),
-            torch.nn.Linear(d_model // 2, 1),
-            torch.nn.ReLU(),
-        )
-
-    def forward(self, x, pos):
-        bs, ss, cs, xs, ys = x.shape
-        x = self.embed(x.reshape(-1, cs, xs, ys))  # embed
-        x = x[-1]  # get last output from resnet backbone
-        _, ds, xs, ys = x.shape
-        x = x.reshape(bs, ss, ds, xs, ys)
-        x = torch.mean(x, dim=(3, 4))  # average embeddings
-        weights = self.poor_mans_attention(pos)
-        if False:
-            x = torch.sum(x * weights, dim=1)
-            x = torch.nn.functional.normalize(x, p=1.0, dim=1)
-        elif False:
-            x = torch.mean(x * weights, dim=1)
-        else:
-            x = torch.sum(x * weights, dim=1)
-            x = torch.nn.functional.normalize(x, p=2.0, dim=1)
-        x = self.fc(x)  # pass through fully-connected layer
-        return x
 
 
 if __name__ == '__main__':
@@ -217,26 +88,25 @@ if __name__ == '__main__':
 
     try:
         import wandb
-        wandb.init(
-            project="geospatial-time-series",
-            config={
-                "learning_rate": args.lr,
-                "training_batches": args.train_batches,
-                "eval_batches": args.eval_batches,
-                "epochs": args.epochs,
-                "batch_size": args.batch_size,
-                "gamma": args.gamma,
-                "sequence_limit": args.sequence_limit,
-                "image_size": args.size,
-                "dimensions": args.dimensions,
-                "architecture": args.architecture,
-                "resnet_architecture": args.resnet_architecture,
-                "transformer_encoder_layers": args.encoder_layers,
-                "transformer_num_heads": args.num_heads,
-                "dataset": args.dataset,
-                "train_ipi": args.train_ipi,
-                "eval_ipi": args.eval_ipi,
-            })
+        wandb.init(project="geospatial-time-series",
+                   config={
+                       "learning_rate": args.lr,
+                       "training_batches": args.train_batches,
+                       "eval_batches": args.eval_batches,
+                       "epochs": args.epochs,
+                       "batch_size": args.batch_size,
+                       "gamma": args.gamma,
+                       "sequence_limit": args.sequence_limit,
+                       "image_size": args.size,
+                       "dimensions": args.dimensions,
+                       "architecture": args.architecture,
+                       "resnet_architecture": args.resnet_architecture,
+                       "transformer_encoder_layers": args.encoder_layers,
+                       "transformer_num_heads": args.num_heads,
+                       "dataset": args.dataset,
+                       "train_ipi": args.train_ipi,
+                       "eval_ipi": args.eval_ipi,
+                   })
     except:
         log.info('No wandb')
 
@@ -290,6 +160,7 @@ if __name__ == '__main__':
 
     # ------------------------------------------------------------------------
 
+    _, clss = next(train_dl)[1].shape
     device = torch.device('cuda')
     if args.architecture == 'series-resnet-classifier':
         assert args.resnet_architecture is not None
@@ -300,10 +171,12 @@ if __name__ == '__main__':
         model = ResnetTransformerClassifier(
             args.resnet_architecture,
             args.resnet_state,
+            args.size,
             # args.dimensions + 512,
             args.dimensions + 0,
             args.num_heads,
             args.encoder_layers,
+            clss=clss,
         ).to(device)
     elif args.architecture == 'attention-classifier':
         assert args.resnet_architecture is not None
@@ -312,7 +185,9 @@ if __name__ == '__main__':
         model = AttentionClassifier(
             args.resnet_architecture,
             args.resnet_state,
+            args.size,
             args.dimensions,
+            clss=clss,
         ).to(device)
     elif args.architecture == 'baseline-classifier':
         assert args.resnet_architecture is not None
@@ -321,7 +196,9 @@ if __name__ == '__main__':
         model = BaselineClassifier(
             args.resnet_architecture,
             args.resnet_state,
+            args.size,
             args.dimensions,
+            clss=clss,
         ).to(device)
 
     obj1 = torch.nn.MSELoss().to(device)
@@ -339,7 +216,8 @@ if __name__ == '__main__':
             if mode == 'train':
                 model.train()
                 batches = args.train_batches
-                for _ in tqdm.tqdm(range(0, batches), desc=f'Epoch {epoch}: training'):
+                for _ in tqdm.tqdm(range(0, batches),
+                                   desc=f'Epoch {epoch}: training'):
                     batch = next(train_dl)
                     x = batch[0].to(device)
                     pos = batch[2].to(device)
@@ -359,8 +237,11 @@ if __name__ == '__main__':
             elif mode == 'eval':
                 model.eval()
                 batches = args.eval_batches
+                gts = []
+                preds = []
                 with torch.no_grad():
-                    for _ in tqdm.tqdm(range(0, batches), desc=f'Epoch {epoch}: evaluation'):
+                    for _ in tqdm.tqdm(range(0, batches),
+                                       desc=f'Epoch {epoch}: evaluation'):
                         batch = next(eval_dl)
                         x = batch[0].to(device)
                         pos = batch[2].to(device)
@@ -371,8 +252,21 @@ if __name__ == '__main__':
                         elif args.architecture in {'baseline-classifier'}:
                             out = model(x)
                         # yapf: enable
+                        gt = batch[1].detach().cpu().numpy()
+                        pred = out.detach().cpu().numpy()
+                        gts.append(gt)
+                        preds.append(pred)
                         loss = obj1(out, target)
                         loss_float.append(loss.item())
+
+                gts = np.concatenate(gts, axis=0)
+                preds = np.concatenate(preds, axis=0)
+                diffs = (gts - preds)
+                mus = np.mean(diffs, axis=0)
+                absmus = np.mean(np.absolute(diffs), axis=0)
+                sigmas = np.sqrt(np.mean(np.power(diffs, 2), axis=0))
+                gts = np.mean(gts, axis=0)
+                preds = np.mean(preds, axis=0)
 
             loss_float = np.mean(loss_float)
 
@@ -381,21 +275,35 @@ if __name__ == '__main__':
             elif mode == 'eval':
                 loss_e = loss_float
 
+        # yapf: disable
         if loss_e < best:
             best = loss_e
-            log.info(f'✓ Epoch={epoch} train={loss_t} eval={loss_e}')
-            # yapf: disable
+            log.info(
+                f'✓ Epoch={epoch} train={loss_t} eval={loss_e} '
+                f'gt={gts} pred={preds} μ={mus} σ={sigmas}'
+            )
             if args.output_dir:
-                torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}.pth')
-            # yapf: enable
+                torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}-{args.resnet_architecture}-best.pth')
         else:
-            log.info(f'✗ Epoch={epoch} train={loss_t} eval={loss_e}')
+            log.info(
+                f'✗ Epoch={epoch} train={loss_t} eval={loss_e} '
+                f'gt={gts} pred={preds} μ={mus} σ={sigmas}'
+            )
+        # yapf: enable
         try:
-            wandb.log({"train_loss": loss_t, "eval_loss": loss_e})
+            wandb_dict = {
+                "loss train": loss_t,
+                "loss eval": loss_e,
+            }
+            for i in range(len(mus)):
+                wandb_dict.update({f'μ{i}': mus[i]})
+                wandb_dict.update({f'abs μ{i}': absmus[i]})
+                wandb_dict.update({f'σ{i}': sigmas[i]})
+            wandb.log(wandb_dict)
         except:
             pass
 
     # yapf: disable
     if args.output_dir:
-        torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}.pth')
+        torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}-{args.resnet_architecture}-last.pth')
     # yapf: enable
