@@ -176,7 +176,7 @@ if __name__ == '__main__':
             args.dimensions + 0,
             args.num_heads,
             args.encoder_layers,
-            clss = clss,
+            clss=clss,
         ).to(device)
     elif args.architecture == 'attention-classifier':
         assert args.resnet_architecture is not None
@@ -187,7 +187,7 @@ if __name__ == '__main__':
             args.resnet_state,
             args.size,
             args.dimensions,
-            clss = clss,
+            clss=clss,
         ).to(device)
     elif args.architecture == 'baseline-classifier':
         assert args.resnet_architecture is not None
@@ -198,7 +198,7 @@ if __name__ == '__main__':
             args.resnet_state,
             args.size,
             args.dimensions,
-            clss = clss,
+            clss=clss,
         ).to(device)
 
     obj1 = torch.nn.MSELoss().to(device)

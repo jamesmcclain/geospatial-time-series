@@ -10,6 +10,7 @@ def unfreeze(m: torch.nn.Module) -> torch.nn.Module:
     for p in m.parameters():
         p.requires_grad = True
 
+
 def freeze_bn(m):
     for (name, child) in m.named_children():
         if isinstance(child, torch.nn.BatchNorm2d):
@@ -28,6 +29,7 @@ def unfreeze_bn(m):
             child.train()
         else:
             unfreeze_bn(child)
+
 
 # Loss function
 class EntropyLoss(torch.nn.Module):
@@ -57,7 +59,14 @@ class EntropyLoss(torch.nn.Module):
 
 class ResnetTransformerClassifier(torch.nn.Module):
 
-    def __init__(self, arch, state, size, d_model, nhead, num_layers, clss: int = 1):
+    def __init__(self,
+                 arch,
+                 state,
+                 size,
+                 d_model,
+                 nhead,
+                 num_layers,
+                 clss: int = 1):
         super().__init__()
         self.embed = torch.hub.load(
             'jamesmcclain/pytorch-fpn:02eb7d4a3b47db22ec30804a92713a08acff6af8',
