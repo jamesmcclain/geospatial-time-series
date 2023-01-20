@@ -29,7 +29,7 @@ class EntropyLoss(torch.nn.Module):
 
 class ResnetTransformerClassifier(torch.nn.Module):
 
-    def __init__(self, arch, state, size, d_model, nhead, num_layers):
+    def __init__(self, arch, state, size, d_model, nhead, num_layers, clss: int = 1):
         super().__init__()
         self.embed = torch.hub.load(
             'jamesmcclain/pytorch-fpn:02eb7d4a3b47db22ec30804a92713a08acff6af8',
@@ -53,7 +53,7 @@ class ResnetTransformerClassifier(torch.nn.Module):
             num_layers=num_layers,
         )
 
-        self.fc = torch.nn.Linear(d_model, 3)
+        self.fc = torch.nn.Linear(d_model, clss)
 
     def forward(self, x, pos):
         bs, ss, cs, xs, ys = x.shape
@@ -74,7 +74,7 @@ class ResnetTransformerClassifier(torch.nn.Module):
 
 class BaselineClassifier(torch.nn.Module):
 
-    def __init__(self, arch, state, size, d_model: int = 512):
+    def __init__(self, arch, state, size, d_model: int = 512, clss: int = 1):
         super().__init__()
         self.embed = torch.hub.load(
             'jamesmcclain/pytorch-fpn:02eb7d4a3b47db22ec30804a92713a08acff6af8',
@@ -87,7 +87,7 @@ class BaselineClassifier(torch.nn.Module):
             out_size=(size, size))
         self.embed.load_state_dict(torch.load(state), strict=True)
         self.embed = self.embed[0]
-        self.fc = torch.nn.Linear(d_model, 3)
+        self.fc = torch.nn.Linear(d_model, clss)
 
     def forward(self, x):
         bs, ss, cs, xs, ys = x.shape
@@ -102,8 +102,8 @@ class BaselineClassifier(torch.nn.Module):
 
 class AttentionClassifier(BaselineClassifier):
 
-    def __init__(self, arch, state, size, d_model: int = 512):
-        super().__init__(arch, state, size, d_model)
+    def __init__(self, arch, state, size, d_model: int = 512, clss: int = 1):
+        super().__init__(arch, state, size, d_model, clss)
         self.poor_mans_attention = torch.nn.Sequential(
             torch.nn.Linear(d_model, d_model),
             torch.nn.ReLU(),

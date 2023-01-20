@@ -160,6 +160,7 @@ if __name__ == '__main__':
 
     # ------------------------------------------------------------------------
 
+    _, clss = next(train_dl)[1].shape
     device = torch.device('cuda')
     if args.architecture == 'series-resnet-classifier':
         assert args.resnet_architecture is not None
@@ -175,6 +176,7 @@ if __name__ == '__main__':
             args.dimensions + 0,
             args.num_heads,
             args.encoder_layers,
+            clss = clss,
         ).to(device)
     elif args.architecture == 'attention-classifier':
         assert args.resnet_architecture is not None
@@ -185,6 +187,7 @@ if __name__ == '__main__':
             args.resnet_state,
             args.size,
             args.dimensions,
+            clss = clss,
         ).to(device)
     elif args.architecture == 'baseline-classifier':
         assert args.resnet_architecture is not None
@@ -195,6 +198,7 @@ if __name__ == '__main__':
             args.resnet_state,
             args.size,
             args.dimensions,
+            clss = clss,
         ).to(device)
 
     obj1 = torch.nn.MSELoss().to(device)
@@ -257,9 +261,12 @@ if __name__ == '__main__':
 
                 gts = np.concatenate(gts, axis=0)
                 preds = np.concatenate(preds, axis=0)
+                diffs = (gts - preds)
                 mus = np.mean(diffs, axis=0)
                 absmus = np.mean(np.absolute(diffs), axis=0)
                 sigmas = np.sqrt(np.mean(np.power(diffs, 2), axis=0))
+                gts = np.mean(gts, axis=0)
+                preds = np.mean(preds, axis=0)
 
             loss_float = np.mean(loss_float)
 
@@ -271,27 +278,32 @@ if __name__ == '__main__':
         # yapf: disable
         if loss_e < best:
             best = loss_e
-            log.info(f'✓ Epoch={epoch} train={loss_t} eval={loss_e} μ={mus} σ={sigmas}')
+            log.info(
+                f'✓ Epoch={epoch} train={loss_t} eval={loss_e} '
+                f'gt={gts} pred={preds} μ={mus} σ={sigmas}'
+            )
             if args.output_dir:
-                torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}.pth')
+                torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}-{args.resnet_architecture}-best.pth')
         else:
-            log.info(f'✗ Epoch={epoch} train={loss_t} eval={loss_e} μ={mus} σ={sigmas}')
+            log.info(
+                f'✗ Epoch={epoch} train={loss_t} eval={loss_e} '
+                f'gt={gts} pred={preds} μ={mus} σ={sigmas}'
+            )
         # yapf: enable
         try:
-            wandb.log({
-                "train_loss": loss_t,
-                "eval_loss": loss_e,
-                "farm μ": mus[0],
-                "forest μ": mus[1],
-                "roads μ": mus[2],
-                "farm σ": sigmas[0],
-                "forest σ": sigmas[1],
-                "roads σ": sigmas[2],
-            })
+            wandb_dict = {
+                "loss train": loss_t,
+                "loss eval": loss_e,
+            }
+            for i in range(len(mus)):
+                wandb_dict.update({f'μ{i}': mus[i]})
+                wandb_dict.update({f'abs μ{i}': absmus[i]})
+                wandb_dict.update({f'σ{i}': sigmas[i]})
+            wandb.log(wandb_dict)
         except:
             pass
 
     # yapf: disable
     if args.output_dir:
-        torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}.pth')
+        torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}-{args.resnet_architecture}-last.pth')
     # yapf: enable
