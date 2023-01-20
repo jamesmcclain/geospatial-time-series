@@ -1,6 +1,34 @@
 import torch
 
 
+def freeze(m: torch.nn.Module) -> torch.nn.Module:
+    for p in m.parameters():
+        p.requires_grad = False
+
+
+def unfreeze(m: torch.nn.Module) -> torch.nn.Module:
+    for p in m.parameters():
+        p.requires_grad = True
+
+def freeze_bn(m):
+    for (name, child) in m.named_children():
+        if isinstance(child, torch.nn.BatchNorm2d):
+            for param in child.parameters():
+                param.requires_grad = False
+            child.eval()
+        else:
+            freeze_bn(child)
+
+
+def unfreeze_bn(m):
+    for (name, child) in m.named_children():
+        if isinstance(child, torch.nn.BatchNorm2d):
+            for param in child.parameters():
+                param.requires_grad = True
+            child.train()
+        else:
+            unfreeze_bn(child)
+
 # Loss function
 class EntropyLoss(torch.nn.Module):
 
