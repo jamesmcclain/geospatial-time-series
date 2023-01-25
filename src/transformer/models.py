@@ -212,7 +212,7 @@ class AttentionSegmenter(torch.nn.Module):
             wi = self.poor_mans_attention[i](pos)  # compute attention weights
             wi = wi.reshape(bs, ss, ds, 1, 1)  # reshape for element-wise mult
             xi = torch.sum(xi * wi, dim=1)  # apply weights to create composite embedding
-            # xi = torch.nn.functional.normalize(xi, p=2.0, dim=1)
+            xi = torch.nn.functional.normalize(xi, p=2.0, dim=1)
             y.append(xi)
         y = tuple(y)
         y = self.fpn(y)  # pass through fpn
