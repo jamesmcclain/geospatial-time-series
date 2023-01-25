@@ -192,12 +192,20 @@ class AttentionSegmenter(torch.nn.Module):
         for dim in self.dims:
             self.poor_mans_attention.append(torch.nn.Sequential(
             torch.nn.Linear(d_model, dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(dim, dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(dim, dim),
-            torch.nn.ReLU(),
+            # torch.nn.ReLU(),
+            # torch.nn.Linear(dim, dim),
+            # torch.nn.ReLU(),
+            # torch.nn.Linear(dim, dim),
+            # torch.nn.ReLU(),
             ))
+
+    def freeze_embed(self):
+        freeze(self.embed)
+        freeze(self.poor_mans_attention)
+
+    def unfreeze_embed(self):
+        unfreeze(self.embed)
+        unfreeze(self.poor_mans_attention)
 
     def forward(self, x, pos):
         # yapf: disable
