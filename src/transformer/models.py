@@ -162,3 +162,59 @@ class AttentionClassifier(BaselineClassifier):
         x = torch.nn.functional.normalize(x, p=2.0, dim=1)
         x = self.fc(x)  # pass through fully-connected layer
         return x
+
+
+class AttentionSegmenter(torch.nn.Module):
+
+    def __init__(self, arch, state, size, d_model: int = 512, clss: int = 1):
+        super().__init__()
+
+        self.resnet = torch.hub.load(
+            'jamesmcclain/pytorch-fpn:02eb7d4a3b47db22ec30804a92713a08acff6af8',
+            'make_fpn_resnet',
+            name=arch,
+            fpn_type='panoptic',
+            num_classes=6,
+            fpn_channels=256,
+            in_channels=12,
+            out_size=(size, size))
+        self.resnet.load_state_dict(torch.load(state), strict=True)
+        self.embed = self.resnet[0]
+        self.fpn = self.resnet[1:]
+        self.fpn[0][-1] = torch.nn.Conv2d(128, clss, kernel_size=(1,1), stride=(1,1))
+
+        if arch in {'resnet18', 'resnet34'}:
+            self.dims = [64, 64, 128, 256, 512, 512]
+        else:
+            raise Exception()
+
+        self.poor_mans_attention = torch.nn.ModuleList()
+        for dim in self.dims:
+            self.poor_mans_attention.append(torch.nn.Sequential(
+            torch.nn.Linear(d_model, dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(dim, dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(dim, dim),
+            torch.nn.ReLU(),
+            ))
+
+    def forward(self, x, pos):
+        # yapf: disable
+        bs, ss, cs, xs, ys = x.shape
+        x = x.reshape(-1, cs, xs, ys)  # reshape for resnet
+        x = self.embed(x)  # embed
+        y = []
+        for i in range(len(x)):
+            xi = x[i]
+            _, ds, xs, ys = xi.shape
+            xi = xi.reshape(bs, ss, ds, xs, ys)  # restore "original" shape
+            wi = self.poor_mans_attention[i](pos)  # compute attention weights
+            wi = wi.reshape(bs, ss, ds, 1, 1)  # reshape for element-wise mult
+            xi = torch.sum(xi * wi, dim=1)  # apply weights to create composite embedding
+            # xi = torch.nn.functional.normalize(xi, p=2.0, dim=1)
+            y.append(xi)
+        y = tuple(y)
+        y = self.fpn(y)  # pass through fpn
+        return y
+        # yapf: enable
