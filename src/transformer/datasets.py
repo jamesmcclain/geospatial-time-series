@@ -61,7 +61,7 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
                 assert self.width == ds.width
                 assert self.bands == ds.count
 
-                width80 = int(width * 0.80)
+                width80 = int(width * 0.50)  # sic
                 if self.evaluation == False:
                     w = rio.windows.Window(0, 0, width80, height)
                 elif self.evaluation == True:

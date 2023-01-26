@@ -69,8 +69,8 @@ def cli_parser():
     parser.add_argument('--epochs', required=False, type=int, default=2**7)
     parser.add_argument('--gamma', required=False, type=float, default=0.7)
 
-    parser.add_argument('--lr', required=False, type=float, default=1e-5)
-    parser.add_argument('--clip', required=False, type=float, default=5e-3)
+    parser.add_argument('--lr', required=False, type=float, default=1e-3)
+    parser.add_argument('--clip', required=False, type=float, default=1)
 
     parser.add_argument('--sequence-limit', required=False, type=int, default=10)
     parser.add_argument('--train-ipi', required=False, type=int, default=None)
@@ -180,7 +180,7 @@ if __name__ == '__main__':
     if 'classifier' in args.architecture:
         _, clss = next(train_dl)[1].shape
     elif 'segmenter' in args.architecture:
-        clss = 3  # XXX
+        clss = 4  # XXX
 
     if args.architecture == 'series-resnet-classifier':
         assert args.resnet_architecture is not None
@@ -230,12 +230,13 @@ if __name__ == '__main__':
             args.dimensions,
             clss=clss,
         ).to(device)
-        model.freeze_embed()
 
     if 'classifier' in args.architecture:
         obj = torch.nn.MSELoss().to(device)
     elif 'segmenter' in args.architecture:
-        obj = torch.nn.CrossEntropyLoss(ignore_index=-1).to(device)
+        obj = torch.nn.CrossEntropyLoss(
+            weight=torch.Tensor([1e-6, 1., 1., 1e-6]),
+            ignore_index=-1).to(device)
     else:
         raise Exception()
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
@@ -260,8 +261,8 @@ if __name__ == '__main__':
                     x = batch[0].to(device)
                     pos = batch[2].to(device)
                     target = batch[1].to(device)
-                    if 'segmenter' in args.architecture:
-                        target = target-1  # XXX
+                    # if 'segmenter' in args.architecture:
+                    #     target = target-1  # XXX
                     if args.architecture in {'attention-segmenter', 'attention-classifier', 'resnet-transformer-classifier'}:
                         out = model(x, pos)
                     elif args.architecture in {'baseline-classifier'}:
@@ -284,8 +285,8 @@ if __name__ == '__main__':
                         x = batch[0].to(device)
                         pos = batch[2].to(device)
                         target = batch[1].to(device)
-                        if 'segmenter' in args.architecture:
-                            target = target-1  # XXX
+                        # if 'segmenter' in args.architecture:
+                        #     target = target-1  # XXX
                         if args.architecture in {'attention-classifier', 'resnet-transformer-classifier'}:
                             out = model(x, pos)
                         elif args.architecture in {'baseline-classifier'}:
