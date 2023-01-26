@@ -98,12 +98,11 @@ if __name__ == '__main__':
     log.info(args.__dict__)
 
     try:
-        raise Exception()
         import wandb
         if 'classifier' in args.architecture:
-            project = 'jamesmcclain/geospatial-time-series classification'
+            project = 'geospatial-time-series classification'
         elif 'segmenter' in args.architecture:
-            project = 'jamesmcclain/geospatial-time-series segmentation'
+            project = 'geospatial-time-series segmentation'
         wandb.init(project=project,
                    config={
                        "learning_rate": args.lr,
@@ -152,7 +151,7 @@ if __name__ == '__main__':
                                     args.target,
                                     iters_per_incr=train_ipi,
                                     size=args.size,
-                                    dimensions=512,
+                                    dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
                                     digest_labels='classifier' in args.architecture,
                                     evaluation=False),
@@ -163,7 +162,7 @@ if __name__ == '__main__':
                                     args.target,
                                     iters_per_incr=eval_ipi,
                                     size=args.size,
-                                    dimensions=512,
+                                    dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
                                     digest_labels='classifier' in args.architecture,
                                     evaluation=True),
@@ -342,10 +341,11 @@ if __name__ == '__main__':
                 "loss train": loss_t,
                 "loss eval": loss_e,
             }
-            for i in range(len(mus)):
-                wandb_dict.update({f'μ{i}': mus[i]})
-                wandb_dict.update({f'abs μ{i}': absmus[i]})
-                wandb_dict.update({f'σ{i}': sigmas[i]})
+            if 'classifier' in args.architecture:
+                for i in range(len(mus)):
+                    wandb_dict.update({f'μ{i}': mus[i]})
+                    wandb_dict.update({f'abs μ{i}': absmus[i]})
+                    wandb_dict.update({f'σ{i}': sigmas[i]})
             wandb.log(wandb_dict)
         except:
             pass
