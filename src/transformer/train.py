@@ -117,6 +117,7 @@ if __name__ == '__main__':
                        "batch_size": args.batch_size,
                        "gamma": args.gamma,
                        "sequence_limit": args.sequence_limit,
+                       "sequence_length": len(args.series),
                        "image_size": args.size,
                        "dimensions": args.dimensions,
                        "architecture": args.architecture,
