@@ -78,6 +78,7 @@ def cli_parser():
 
     # Other
     parser.add_argument('--num-workers', required=False, type=int, default=1)
+    parser.add_argument('--wandb-name', required=False, type=str, default=None)
 
     return parser
     # yapf: enable
@@ -100,9 +101,13 @@ if __name__ == '__main__':
     try:
         import wandb
         if 'classifier' in args.architecture:
-            project = 'geospatial-time-series classification'
+            if args.wandb_name is None:
+                args.wandb_name = 'classification'
+            project = f'geospatial-time-series {args.wandb_name}'
         elif 'segmenter' in args.architecture:
-            project = 'geospatial-time-series segmentation'
+            if args.wandb_name is None:
+                args.wandb_name = 'segmentation'
+            project = f'geospatial-time-series {args.wandb_name}'
         wandb.init(project=project,
                    config={
                        "learning_rate": args.lr,
