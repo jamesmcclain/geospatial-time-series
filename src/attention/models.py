@@ -181,7 +181,10 @@ class AttentionSegmenter(torch.nn.Module):
         self.resnet.load_state_dict(torch.load(state), strict=True)
         self.embed = self.resnet[0]
         self.fpn = self.resnet[1:]
-        self.fpn[0][-1] = torch.nn.Conv2d(128, clss, kernel_size=(1,1), stride=(1,1))
+        self.fpn[0][-1] = torch.nn.Conv2d(128,
+                                          clss,
+                                          kernel_size=(1, 1),
+                                          stride=(1, 1))
 
         if arch in {'resnet18', 'resnet34'}:
             self.dims = [64, 64, 128, 256, 512, 512]
@@ -190,14 +193,15 @@ class AttentionSegmenter(torch.nn.Module):
 
         self.poor_mans_attention = torch.nn.ModuleList()
         for dim in self.dims:
-            self.poor_mans_attention.append(torch.nn.Sequential(
-            torch.nn.Linear(d_model, dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(dim, dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(dim, dim),
-            torch.nn.ReLU(),
-            ))
+            self.poor_mans_attention.append(
+                torch.nn.Sequential(
+                    torch.nn.Linear(d_model, dim),
+                    torch.nn.ReLU(),
+                    torch.nn.Linear(dim, dim),
+                    torch.nn.ReLU(),
+                    torch.nn.Linear(dim, dim),
+                    torch.nn.ReLU(),
+                ))
 
     def freeze_embed(self):
         freeze(self.embed)
@@ -224,3 +228,27 @@ class AttentionSegmenter(torch.nn.Module):
         y = self.fpn(y)  # pass through fpn
         return y
         # yapf: enable
+
+class AttentionSegmenter2(AttentionSegmenter):
+
+    def __init__(self, arch, state, size, d_model: int = 512, clss: int = 1):
+        super().__init__(arch, state, size, d_model, clss)
+        del self.poor_mans_attention
+        self.poor_mans_attention = torch.nn.Sequential(
+            torch.nn.Linear(d_model, d_model // 2),
+            torch.nn.ReLU(),
+            torch.nn.Linear(d_model // 2, clss),
+            torch.nn.ReLU(),
+        )
+        self.clss = clss
+
+    def forward(self, x, pos):
+        bs, ss, cs, xs, ys = x.shape
+        x = x.reshape(-1, cs, xs, ys)  # reshape for resnet
+        x = self.resnet(x)  # segmentation
+        x = x.reshape(bs, ss, self.clss, xs, ys)
+        w = self.poor_mans_attention(pos)  # compute attention weights
+        w = w.reshape(bs, ss, self.clss, 1, 1)  # reshape for element-wise mult
+        x = torch.sum(x * w, dim=1)  # apply weights to create composite result
+        x = torch.nn.functional.normalize(x, p=1.0, dim=1)
+        return x

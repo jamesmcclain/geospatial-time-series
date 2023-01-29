@@ -15,13 +15,14 @@ from PIL import Image
 
 from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
                       RawSeriesDataset)
-from models import (AttentionClassifier, AttentionSegmenter, BaselineClassifier, EntropyLoss,
+from models import (AttentionClassifier, AttentionSegmenter,
+                    AttentionSegmenter2, BaselineClassifier, EntropyLoss,
                     ResnetTransformerClassifier)
-
 
 ARCHITECTURES = [
     'attention-classifier',
     'attention-segmenter',
+    'attention-segmenter2',
     'baseline-classifier',
     'resnet-transformer-classifier',
 ]
@@ -159,7 +160,8 @@ if __name__ == '__main__':
                                     size=args.size,
                                     dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
-                                    digest_labels='classifier' in args.architecture,
+                                    digest_labels='classifier'
+                                    in args.architecture,
                                     evaluation=False),
             **dataloader_cfg,
         )
@@ -170,7 +172,8 @@ if __name__ == '__main__':
                                     size=args.size,
                                     dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
-                                    digest_labels='classifier' in args.architecture,
+                                    digest_labels='classifier'
+                                    in args.architecture,
                                     evaluation=True),
             **dataloader_cfg,
         )
@@ -235,13 +238,25 @@ if __name__ == '__main__':
             args.dimensions,
             clss=clss,
         ).to(device)
+    elif args.architecture == 'attention-segmenter2':
+        assert args.resnet_architecture is not None
+        assert args.resnet_state is not None
+        assert args.dimensions is not None
+        model = AttentionSegmenter2(
+            args.resnet_architecture,
+            args.resnet_state,
+            args.size,
+            args.dimensions,
+            clss=clss,
+        ).to(device)
 
     if 'classifier' in args.architecture:
         obj = torch.nn.MSELoss().to(device)
     elif 'segmenter' in args.architecture:
         obj = torch.nn.CrossEntropyLoss(
             weight=torch.Tensor([1e-6, 1., 1., 1e-6]),
-            ignore_index=-1).to(device)
+            ignore_index=-1,
+        ).to(device)
     else:
         raise Exception()
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
@@ -268,7 +283,11 @@ if __name__ == '__main__':
                     target = batch[1].to(device)
                     # if 'segmenter' in args.architecture:
                     #     target = target-1  # XXX
-                    if args.architecture in {'attention-segmenter', 'attention-classifier', 'resnet-transformer-classifier'}:
+                    if args.architecture in {
+                            'attention-segmenter', 'attention-segmenter2',
+                            'attention-classifier',
+                            'resnet-transformer-classifier'
+                    }:
                         out = model(x, pos)
                     elif args.architecture in {'baseline-classifier'}:
                         out = model(x)
@@ -276,7 +295,10 @@ if __name__ == '__main__':
                     loss_float.append(loss.item())
 
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(),
+                        args.clip,
+                    )
                     opt.step()
             elif mode == 'eval':
                 model.eval()
@@ -292,7 +314,10 @@ if __name__ == '__main__':
                         target = batch[1].to(device)
                         # if 'segmenter' in args.architecture:
                         #     target = target-1  # XXX
-                        if args.architecture in {'attention-classifier', 'resnet-transformer-classifier'}:
+                        if args.architecture in {
+                                'attention-classifier',
+                                'resnet-transformer-classifier'
+                        }:
                             out = model(x, pos)
                         elif args.architecture in {'baseline-classifier'}:
                             out = model(x)
