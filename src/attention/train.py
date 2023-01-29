@@ -22,7 +22,8 @@ from models import (AttentionClassifier, AttentionSegmenter,
 ARCHITECTURES = [
     'attention-classifier',
     'attention-segmenter',
-    'attention-segmenter2',
+    'attention-segmenter-in',
+    'attention-segmenter-out',
     'baseline-classifier',
     'resnet-transformer-classifier',
 ]
@@ -219,11 +220,22 @@ if __name__ == '__main__':
             args.dimensions,
             clss=clss,
         ).to(device)
-    elif args.architecture == 'attention-segmenter2':
+    elif args.architecture == 'attention-segmenter-in':
         assert args.resnet_architecture is not None
         assert args.resnet_state is not None
         assert args.dimensions is not None
-        model = AttentionSegmenter2(
+        model = AttentionSegmenterIn(
+            args.resnet_architecture,
+            args.resnet_state,
+            args.size,
+            args.dimensions,
+            clss=clss,
+        ).to(device)
+    elif args.architecture == 'attention-segmenter-out':
+        assert args.resnet_architecture is not None
+        assert args.resnet_state is not None
+        assert args.dimensions is not None
+        model = AttentionSegmenterOut(
             args.resnet_architecture,
             args.resnet_state,
             args.size,
@@ -262,13 +274,7 @@ if __name__ == '__main__':
                     x = batch[0].to(device)
                     pos = batch[2].to(device)
                     target = batch[1].to(device)
-                    # if 'segmenter' in args.architecture:
-                    #     target = target-1  # XXX
-                    if args.architecture in {
-                            'attention-segmenter', 'attention-segmenter2',
-                            'attention-classifier',
-                            'resnet-transformer-classifier'
-                    }:
+                    if args.architecture not in {'baseline-classifier'}:
                         out = model(x, pos)
                     elif args.architecture in {'baseline-classifier'}:
                         out = model(x)

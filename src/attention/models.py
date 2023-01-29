@@ -229,7 +229,33 @@ class AttentionSegmenter(torch.nn.Module):
         return y
         # yapf: enable
 
-class AttentionSegmenter2(AttentionSegmenter):
+
+class AttentionSegmenterIn(AttentionSegmenter):
+
+    def __init__(self, arch, state, size, d_model: int = 512, clss: int = 1):
+        super().__init__(arch, state, size, d_model, clss)
+        del self.poor_mans_attention
+        self.poor_mans_attention = torch.nn.Sequential(
+            torch.nn.Linear(d_model, d_model // 2),
+            torch.nn.ReLU(),
+            torch.nn.Linear(d_model // 2, clss),
+            torch.nn.ReLU(),
+        )
+        self.clss = clss
+
+    def forward(self, x, pos):
+        bs, ss, cs, xs, ys = x.shape
+        x = x.reshape(-1, cs, xs, ys)  # reshape for resnet
+        x = self.resnet(x)  # segmentation
+        x = x.reshape(bs, ss, self.clss, xs, ys)
+        w = self.poor_mans_attention(pos)  # compute attention weights
+        w = w.reshape(bs, ss, self.clss, 1, 1)  # reshape for element-wise mult
+        x = torch.sum(x * w, dim=1)  # apply weights to create composite result
+        x = torch.nn.functional.normalize(x, p=1.0, dim=1)
+        return x
+
+
+class AttentionSegmenterOut(AttentionSegmenter):
 
     def __init__(self, arch, state, size, d_model: int = 512, clss: int = 1):
         super().__init__(arch, state, size, d_model, clss)
