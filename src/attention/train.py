@@ -74,8 +74,6 @@ def cli_parser():
     parser.add_argument('--clip', required=False, type=float, default=1)
 
     parser.add_argument('--sequence-limit', required=False, type=int, default=10)
-    parser.add_argument('--train-ipi', required=False, type=int, default=None)
-    parser.add_argument('--eval-ipi', required=False, type=int, default=None)
 
     # Other
     parser.add_argument('--num-workers', required=False, type=int, default=1)
@@ -100,15 +98,10 @@ if __name__ == '__main__':
     log.info(args.__dict__)
 
     try:
+        if args.wandb_name is None:
+            raise Exception('XXX')
         import wandb
-        if 'classifier' in args.architecture:
-            if args.wandb_name is None:
-                args.wandb_name = 'classification'
-            project = f'geospatial-time-series {args.wandb_name}'
-        elif 'segmenter' in args.architecture:
-            if args.wandb_name is None:
-                args.wandb_name = 'segmentation'
-            project = f'geospatial-time-series {args.wandb_name}'
+        project = f'geospatial-time-series {args.wandb_name}'
         wandb.init(project=project,
                    config={
                        "learning_rate": args.lr,
@@ -126,8 +119,6 @@ if __name__ == '__main__':
                        "transformer_encoder_layers": args.encoder_layers,
                        "transformer_num_heads": args.num_heads,
                        "dataset": args.dataset,
-                       "train_ipi": args.train_ipi,
-                       "eval_ipi": args.eval_ipi,
                    })
     except:
         log.info('No wandb')
@@ -144,19 +135,10 @@ if __name__ == '__main__':
         tb = args.train_batches
         eb = args.eval_batches
         nw = args.num_workers if args.num_workers > 0 else 1
-        if args.train_ipi is None:
-            train_ipi = (bs * tb) // nw
-        else:
-            train_ipi = args.train_ipi
-        if args.eval_ipi is None:
-            eval_ipi = (bs * eb) // nw
-        else:
-            eval_ipi = args.eval_ipi
 
         train_dl = torch.utils.data.DataLoader(
             InMemorySeasonalDataset(args.series,
                                     args.target,
-                                    iters_per_incr=train_ipi,
                                     size=args.size,
                                     dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
@@ -168,7 +150,6 @@ if __name__ == '__main__':
         eval_dl = torch.utils.data.DataLoader(
             InMemorySeasonalDataset(args.series,
                                     args.target,
-                                    iters_per_incr=eval_ipi,
                                     size=args.size,
                                     dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
