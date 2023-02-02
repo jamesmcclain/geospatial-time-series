@@ -16,7 +16,7 @@ from PIL import Image
 from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
                       RawSeriesDataset)
 from models import (AttentionClassifier, AttentionSegmenter,
-                    AttentionSegmenter2, BaselineClassifier, EntropyLoss,
+                    AttentionSegmenterIn, AttentionSegmenterOut, BaselineClassifier, EntropyLoss,
                     ResnetTransformerClassifier)
 
 ARCHITECTURES = [
