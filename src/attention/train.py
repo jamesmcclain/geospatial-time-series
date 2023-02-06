@@ -68,7 +68,7 @@ def cli_parser():
     parser.add_argument('--num-heads', required=False, type=int, default=1)
 
     # parser.add_argument('--entropy', dest='entropy', default=False, action='store_true')
-    parser.add_argument('--epochs', required=False, type=int, default=2**7)
+    parser.add_argument('--epochs', required=False, type=int, default=[13, 33], nargs='+')
     parser.add_argument('--gamma', required=False, type=float, default=0.7)
 
     parser.add_argument('--lr', required=False, type=float, default=1e-3)
@@ -258,19 +258,53 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------------
 
     best = math.inf
-    for epoch in range(1, args.epochs + 1):
+    for phase in range(2):
 
-        current = 0
-        for mode in ['train', 'eval']:
-            loss_float = []
-            if mode == 'train':
-                model.train()
-                batches = args.train_batches
-                for _ in tqdm.tqdm(range(0, batches),
-                                   desc=f'Epoch {epoch}: training'):
-                    opt.zero_grad()
+        if phase == 0:
+            model.freeze_resnet()
+            log.info('ResNet frozen')
+        if phase != 0:
+            model.unfreeze_resnet()
+            log.info('ResNet unfrozen')
 
-                    batch = next(train_dl)
+        for epoch in range(1, args.epochs[phase] + 1):
+            loss_t = []
+            loss_e = []
+
+            # Train
+            model.train()
+            for _ in tqdm.tqdm(range(0, args.train_batches), desc=f'Epoch {epoch}: training'):
+                opt.zero_grad()
+
+                batch = next(train_dl)
+                x = batch[0].to(device)
+                pos = batch[2].to(device)
+                target = batch[1].to(device)
+                if args.architecture not in {'baseline-classifier'}:
+                    out = model(x, pos)
+                elif args.architecture in {'baseline-classifier'}:
+                    out = model(x)
+                loss = obj(out, target)
+                loss_t.append(loss.item())
+
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(),
+                    args.clip,
+                )
+                opt.step()
+                sched.step()
+            loss_t = loss_t
+            loss_t = np.mean(loss_t)
+
+            # Evaluation
+            # gts = []
+            # preds = []
+            model.eval()
+            batches = args.eval_batches
+            with torch.no_grad():
+                for _ in tqdm.tqdm(range(0, args.eval_batches), desc=f'Epoch {epoch}: evaluation'):
+                    batch = next(eval_dl)
                     x = batch[0].to(device)
                     pos = batch[2].to(device)
                     target = batch[1].to(device)
@@ -278,95 +312,61 @@ if __name__ == '__main__':
                         out = model(x, pos)
                     elif args.architecture in {'baseline-classifier'}:
                         out = model(x)
+                    # if 'classifier' in args.architecture:
+                    #     gt = batch[1].detach().cpu().numpy()
+                    #     pred = out.detach().cpu().numpy()
+                    #     gts.append(gt)
+                    #     preds.append(pred)
                     loss = obj(out, target)
-                    loss_float.append(loss.item())
+                    loss_e.append(loss.item())
 
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(
-                        model.parameters(),
-                        args.clip,
-                    )
-                    opt.step()
-            elif mode == 'eval':
-                model.eval()
-                batches = args.eval_batches
-                gts = []
-                preds = []
-                with torch.no_grad():
-                    for _ in tqdm.tqdm(range(0, batches),
-                                       desc=f'Epoch {epoch}: evaluation'):
-                        batch = next(eval_dl)
-                        x = batch[0].to(device)
-                        pos = batch[2].to(device)
-                        target = batch[1].to(device)
-                        # if 'segmenter' in args.architecture:
-                        #     target = target-1  # XXX
-                        if args.architecture in {
-                                'attention-classifier',
-                                'resnet-transformer-classifier'
-                        }:
-                            out = model(x, pos)
-                        elif args.architecture in {'baseline-classifier'}:
-                            out = model(x)
-                        if 'classifier' in args.architecture:
-                            gt = batch[1].detach().cpu().numpy()
-                            pred = out.detach().cpu().numpy()
-                            gts.append(gt)
-                            preds.append(pred)
-                        loss = obj(out, target)
-                        loss_float.append(loss.item())
+                # if 'classifier' in args.architecture:
+                #     gts = np.concatenate(gts, axis=0)
+                #     preds = np.concatenate(preds, axis=0)
+                #     diffs = (gts - preds)
+                #     mus = np.mean(diffs, axis=0)
+                #     absmus = np.mean(np.absolute(diffs), axis=0)
+                #     sigmas = np.sqrt(np.mean(np.power(diffs, 2), axis=0))
+                #     gts = np.mean(gts, axis=0)
+                #     preds = np.mean(preds, axis=0)
 
-                if 'classifier' in args.architecture:
-                    gts = np.concatenate(gts, axis=0)
-                    preds = np.concatenate(preds, axis=0)
-                    diffs = (gts - preds)
-                    mus = np.mean(diffs, axis=0)
-                    absmus = np.mean(np.absolute(diffs), axis=0)
-                    sigmas = np.sqrt(np.mean(np.power(diffs, 2), axis=0))
-                    gts = np.mean(gts, axis=0)
-                    preds = np.mean(preds, axis=0)
+            loss_e = np.mean(loss_e)
 
-            loss_float = np.mean(loss_float)
-
-            if mode == 'train':
-                loss_t = loss_float
-            elif mode == 'eval':
-                loss_e = loss_float
-
-        # yapf: disable
-        if loss_e < best:
-            best = loss_e
-            if 'classifier' in args.architecture:
-                log.info(
-                    f'✓ Epoch={epoch} train={loss_t} eval={loss_e} '
-                    f'gt={gts} pred={preds} μ={mus} σ={sigmas}'
-                )
-            else:
+            # yapf: disable
+            if loss_e < best:
+                best = loss_e
+                # if 'classifier' in args.architecture:
+                #     log.info(
+                #         f'✓ Epoch={epoch} train={loss_t} eval={loss_e} '
+                #         f'gt={gts} pred={preds} μ={mus} σ={sigmas}'
+                #     )
+                # else:
                 log.info(f'✓ Epoch={epoch} train={loss_t} eval={loss_e}')
-            if args.output_dir:
-                torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}-{args.resnet_architecture}-best.pth')
-        else:
-            if 'classifier' in args.architecture:
-                log.info(
-                    f'✗ Epoch={epoch} train={loss_t} eval={loss_e} '
-                    f'gt={gts} pred={preds} μ={mus} σ={sigmas}'
-                )
+                if args.output_dir:
+                    torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}-{args.resnet_architecture}-best.pth')
             else:
+                # if 'classifier' in args.architecture:
+                #     log.info(
+                #         f'✗ Epoch={epoch} train={loss_t} eval={loss_e} '
+                #         f'gt={gts} pred={preds} μ={mus} σ={sigmas}'
+                #     )
+                # else:
                 log.info(f'✗ Epoch={epoch} train={loss_t} eval={loss_e}')
-        # yapf: enable
-        try:
-            wandb_dict = {
-                "loss train": loss_t,
-                "loss eval": loss_e,
-            }
-            if 'classifier' in args.architecture:
-                for i in range(len(mus)):
-                    wandb_dict.update({f'μ{i}': mus[i]})
-                    wandb_dict.update({f'abs μ{i}': absmus[i]})
-                    wandb_dict.update({f'σ{i}': sigmas[i]})
-            wandb.log(wandb_dict)
-        except:
-            pass
+            # yapf: enable
+
+            try:
+                wandb_dict = {
+                    "loss train": loss_t,
+                    "loss eval": loss_e,
+                }
+                # if 'classifier' in args.architecture:
+                #     for i in range(len(mus)):
+                #         wandb_dict.update({f'μ{i}': mus[i]})
+                #         wandb_dict.update({f'abs μ{i}': absmus[i]})
+                #         wandb_dict.update({f'σ{i}': sigmas[i]})
+                #         wandb.log(wandb_dict)
+            except:
+                pass
 
     # yapf: disable
     if args.output_dir:

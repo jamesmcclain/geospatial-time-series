@@ -203,11 +203,11 @@ class AttentionSegmenter(torch.nn.Module):
                     torch.nn.ReLU(),
                 ))
 
-    def freeze_embed(self):
-        freeze(self.embed)
+    def freeze_resnet(self):
+        freeze(self.resnet)
 
-    def unfreeze_embed(self):
-        unfreeze(self.embed)
+    def unfreeze_resnet(self):
+        unfreeze(self.resnet)
 
     def forward(self, x, pos):
         # yapf: disable
