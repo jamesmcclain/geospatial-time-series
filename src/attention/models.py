@@ -85,15 +85,24 @@ class AttentionSegmenter(torch.nn.Module):
                                           kernel_size=(1, 1),
                                           stride=(1, 1))
 
-        if arch in {'resnet18', 'resnet34'}:
-            self.dims = [64, 64, 128, 256, 512, 512]
+        self.arch = arch
+        if self.arch in {'resnet18', 'resnet34'}:
+            self.shapes = [
+                [64, 64, 64],
+                [64, 64, 64],
+                [128, 32, 32],
+                [256, 16, 16],
+                [512, 8, 8],
+                [512, 8, 8],
+            ]
         else:
-            raise Exception(f'Not prepared for {arch}')
+            raise Exception(f'Not prepared for {self.arch}')
 
         self.self_attn = torch.nn.ModuleList()
         self.q_fcns = torch.nn.ModuleList()
         self.k_fcns = torch.nn.ModuleList()
-        for dim in self.dims:
+        for shape in self.shapes:
+            dim = shape[0]
             self.q_fcns.append(torch.nn.Linear(dim, dim))
             self.k_fcns.append(torch.nn.Linear(dim, dim))
             self.self_attn.append(torch.nn.MultiheadAttention(dim, num_heads, batch_first=True))
@@ -109,28 +118,34 @@ class AttentionSegmenter(torch.nn.Module):
         bs, ss, cs, xs, ys = x.shape
         x = x.reshape(-1, cs, xs, ys)  # reshape for resnet
         x = self.embed(x)  # embed
+
         y = []
+        for shape in self.shapes:
+            y.append(torch.zeros(bs, *shape, dtype=torch.float32, device=x[0].device))
+
         for i in range(len(x)):
             xi = x[i]
-            _, ds, xs, ys = xi.shape
-            xi = xi.reshape(bs, ss, ds, xs, ys)  # Restore "original" shape
-            stash = []
-            for j in range(xs):  # For every spatial nugget ...
-                for k in range(ys):  # ...
-                    # Compute Q
-                    qew = torch.mean(self.q_fcns[i](xi[:, :, :, j, k]), dim=1, keepdim=True)
-                    # Compute K
-                    kay = self.k_fcns[i](xi[:, :, :, j, k])
-                    # Get V
-                    vee = xi[:, :, :, j, k]
-                    # Stash results
-                    result, _ = self.self_attn[i](qew, kay, vee)
-                    stash.append(result)
-            # Retrieve and save results
-            stash = torch.stack(stash, dim=3).reshape(bs, ds, xs, ys)
-            y.append(stash)
-        y = tuple(y)
-        y = self.fpn(y)  # pass through fpn
+            shape = self.shapes[i]
+
+            xi = xi.reshape(bs, ss, *shape)  # Restore "original" shape
+            xi = torch.transpose(xi, 2, 4)  # move embeddngs to end
+            xi = torch.transpose(xi, 1, 2)  # move spatial dimenson up
+            xi = torch.transpose(xi, 2, 3)  # move other spatial dimension up
+            # V
+            vee = xi = xi.reshape(-1, ss, shape[0])  # put batch and spatial dimensions together
+            # Q
+            qew = torch.mean(self.q_fcns[i](xi), dim=1, keepdim=True)
+            # K
+            kay = self.k_fcns[i](xi)
+
+            # Use MultiheadAttention block
+            result, _ = self.self_attn[i](qew, kay, vee)
+            result = result.reshape(bs, shape[1], shape[2], shape[0])
+            result = torch.transpose(result, 2, 3)
+            result = torch.transpose(result, 1, 2)
+            y[i] = result
+
+        y = self.fpn(tuple(y))  # pass through fpn
         return y
         # yapf: enable
 
@@ -148,6 +163,7 @@ class AttentionSegmenterIn(AttentionSegmenter):
         #     torch.nn.ReLU(),
         # )
         self.poor_mans_attention = torch.nn.Linear(d_model, 12)
+        self.stash = None
 
 
     def forward(self, x, pos):

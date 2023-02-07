@@ -24,7 +24,7 @@ ARCHITECTURES = [
     'attention-segmenter-out',
 ]
 DATASETS = ['in-memory-seasonal']
-RESNETS = ['resnet18', 'resnet34', 'resnet50']
+RESNETS = ['resnet18', 'resnet34']
 
 
 def worker_init_fn(i):
@@ -43,6 +43,8 @@ dataloader_cfg = {
 def cli_parser():
     # yapf: disable
     parser = argparse.ArgumentParser()
+
+    parser.add_argument('--device', required=False, type=str, default='cuda', choices=['cuda', 'cpu'])
 
     # Dataset, model type, input, output
     parser.add_argument('--architecture', required=True, type=str, choices=ARCHITECTURES)
@@ -156,7 +158,7 @@ if __name__ == '__main__':
 
     # ------------------------------------------------------------------------
 
-    device = torch.device('cuda')
+    device = torch.device(args.device)
 
     if args.architecture == 'attention-segmenter':
         assert args.resnet_architecture is not None
