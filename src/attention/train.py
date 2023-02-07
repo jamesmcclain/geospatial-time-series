@@ -15,17 +15,13 @@ from PIL import Image
 
 from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
                       RawSeriesDataset)
-from models import (AttentionClassifier, AttentionSegmenter,
-                    AttentionSegmenterIn, AttentionSegmenterOut, BaselineClassifier, EntropyLoss,
-                    ResnetTransformerClassifier)
+from models import (AttentionSegmenter,
+                    AttentionSegmenterIn, AttentionSegmenterOut, EntropyLoss)
 
 ARCHITECTURES = [
-    'attention-classifier',
     'attention-segmenter',
     'attention-segmenter-in',
     'attention-segmenter-out',
-    'baseline-classifier',
-    'resnet-transformer-classifier',
 ]
 DATASETS = ['in-memory-seasonal']
 RESNETS = ['resnet18', 'resnet34', 'resnet50']
@@ -143,8 +139,7 @@ if __name__ == '__main__':
                                     size=args.size,
                                     dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
-                                    digest_labels='classifier'
-                                    in args.architecture,
+                                    digest_labels='classifier' in args.architecture,
                                     evaluation=False),
             **dataloader_cfg,
         )
@@ -154,8 +149,7 @@ if __name__ == '__main__':
                                     size=args.size,
                                     dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
-                                    digest_labels='classifier'
-                                    in args.architecture,
+                                    digest_labels='classifier' in args.architecture,
                                     evaluation=True),
             **dataloader_cfg,
         )
@@ -167,49 +161,7 @@ if __name__ == '__main__':
 
     device = torch.device('cuda')
 
-    if 'classifier' in args.architecture:
-        _, clss = next(train_dl)[1].shape
-    elif 'segmenter' in args.architecture:
-        clss = 4  # XXX
-
-    if args.architecture == 'series-resnet-classifier':
-        assert args.resnet_architecture is not None
-        assert args.resnet_state is not None
-        assert args.dimensions is not None
-        assert args.num_heads is not None
-        assert args.encoder_layers is not None
-        model = ResnetTransformerClassifier(
-            args.resnet_architecture,
-            args.resnet_state,
-            args.size,
-            args.dimensions,
-            args.num_heads,
-            args.encoder_layers,
-            clss=clss,
-        ).to(device)
-    elif args.architecture == 'baseline-classifier':
-        assert args.resnet_architecture is not None
-        assert args.resnet_state is not None
-        assert args.dimensions is not None
-        model = BaselineClassifier(
-            args.resnet_architecture,
-            args.resnet_state,
-            args.size,
-            args.dimensions,
-            clss=clss,
-        ).to(device)
-    elif args.architecture == 'attention-classifier':
-        assert args.resnet_architecture is not None
-        assert args.resnet_state is not None
-        assert args.dimensions is not None
-        model = AttentionClassifier(
-            args.resnet_architecture,
-            args.resnet_state,
-            args.size,
-            args.dimensions,
-            clss=clss,
-        ).to(device)
-    elif args.architecture == 'attention-segmenter':
+    if args.architecture == 'attention-segmenter':
         assert args.resnet_architecture is not None
         assert args.resnet_state is not None
         assert args.dimensions is not None
@@ -218,7 +170,7 @@ if __name__ == '__main__':
             args.resnet_state,
             args.size,
             args.dimensions,
-            clss=clss,
+            num_heads=3,
         ).to(device)
     elif args.architecture == 'attention-segmenter-in':
         assert args.resnet_architecture is not None
@@ -229,7 +181,6 @@ if __name__ == '__main__':
             args.resnet_state,
             args.size,
             args.dimensions,
-            clss=clss,
         ).to(device)
     elif args.architecture == 'attention-segmenter-out':
         assert args.resnet_architecture is not None
@@ -240,18 +191,12 @@ if __name__ == '__main__':
             args.resnet_state,
             args.size,
             args.dimensions,
-            clss=clss,
         ).to(device)
 
-    if 'classifier' in args.architecture:
-        obj = torch.nn.MSELoss().to(device)
-    elif 'segmenter' in args.architecture:
-        obj = torch.nn.CrossEntropyLoss(
-            weight=torch.Tensor([1e-6, 1., 1., 1e-6]),
-            ignore_index=-1,
-        ).to(device)
-    else:
-        raise Exception()
+    obj = torch.nn.CrossEntropyLoss(
+        weight=torch.Tensor([1., 1., 1., 1.]),
+        ignore_index=-1,
+    ).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
     sched = torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=args.gamma)
 
@@ -280,10 +225,7 @@ if __name__ == '__main__':
                 x = batch[0].to(device)
                 pos = batch[2].to(device)
                 target = batch[1].to(device)
-                if args.architecture not in {'baseline-classifier'}:
-                    out = model(x, pos)
-                elif args.architecture in {'baseline-classifier'}:
-                    out = model(x)
+                out = model(x, pos)
                 loss = obj(out, target)
                 loss_t.append(loss.item())
 
@@ -298,8 +240,6 @@ if __name__ == '__main__':
             loss_t = np.mean(loss_t)
 
             # Evaluation
-            # gts = []
-            # preds = []
             model.eval()
             batches = args.eval_batches
             with torch.no_grad():
@@ -308,49 +248,19 @@ if __name__ == '__main__':
                     x = batch[0].to(device)
                     pos = batch[2].to(device)
                     target = batch[1].to(device)
-                    if args.architecture not in {'baseline-classifier'}:
-                        out = model(x, pos)
-                    elif args.architecture in {'baseline-classifier'}:
-                        out = model(x)
-                    # if 'classifier' in args.architecture:
-                    #     gt = batch[1].detach().cpu().numpy()
-                    #     pred = out.detach().cpu().numpy()
-                    #     gts.append(gt)
-                    #     preds.append(pred)
+                    out = model(x, pos)
                     loss = obj(out, target)
                     loss_e.append(loss.item())
-
-                # if 'classifier' in args.architecture:
-                #     gts = np.concatenate(gts, axis=0)
-                #     preds = np.concatenate(preds, axis=0)
-                #     diffs = (gts - preds)
-                #     mus = np.mean(diffs, axis=0)
-                #     absmus = np.mean(np.absolute(diffs), axis=0)
-                #     sigmas = np.sqrt(np.mean(np.power(diffs, 2), axis=0))
-                #     gts = np.mean(gts, axis=0)
-                #     preds = np.mean(preds, axis=0)
 
             loss_e = np.mean(loss_e)
 
             # yapf: disable
             if loss_e < best:
                 best = loss_e
-                # if 'classifier' in args.architecture:
-                #     log.info(
-                #         f'✓ Epoch={epoch} train={loss_t} eval={loss_e} '
-                #         f'gt={gts} pred={preds} μ={mus} σ={sigmas}'
-                #     )
-                # else:
                 log.info(f'✓ Epoch={epoch} train={loss_t} eval={loss_e}')
                 if args.output_dir:
                     torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}-{args.resnet_architecture}-best.pth')
             else:
-                # if 'classifier' in args.architecture:
-                #     log.info(
-                #         f'✗ Epoch={epoch} train={loss_t} eval={loss_e} '
-                #         f'gt={gts} pred={preds} μ={mus} σ={sigmas}'
-                #     )
-                # else:
                 log.info(f'✗ Epoch={epoch} train={loss_t} eval={loss_e}')
             # yapf: enable
 
@@ -359,12 +269,6 @@ if __name__ == '__main__':
                     "loss train": loss_t,
                     "loss eval": loss_e,
                 }
-                # if 'classifier' in args.architecture:
-                #     for i in range(len(mus)):
-                #         wandb_dict.update({f'μ{i}': mus[i]})
-                #         wandb_dict.update({f'abs μ{i}': absmus[i]})
-                #         wandb_dict.update({f'σ{i}': sigmas[i]})
-                #         wandb.log(wandb_dict)
             except:
                 pass
 
