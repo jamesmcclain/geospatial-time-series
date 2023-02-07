@@ -16,7 +16,7 @@ from PIL import Image
 from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
                       RawSeriesDataset)
 from models import (AttentionSegmenter,
-                    AttentionSegmenterIn, AttentionSegmenterOut, EntropyLoss)
+                    AttentionSegmenterIn, AttentionSegmenterOut)
 
 ARCHITECTURES = [
     'attention-segmenter',
@@ -60,10 +60,8 @@ def cli_parser():
     parser.add_argument('--batch-size', required=False, type=int, default=4)
 
     parser.add_argument('--dimensions', required=False, type=int, default=512)
-    parser.add_argument('--encoder-layers', required=False, type=int, default=1)
     parser.add_argument('--num-heads', required=False, type=int, default=1)
 
-    # parser.add_argument('--entropy', dest='entropy', default=False, action='store_true')
     parser.add_argument('--epochs', required=False, type=int, default=[13, 33], nargs='+')
     parser.add_argument('--gamma', required=False, type=float, default=0.7)
 
@@ -113,8 +111,7 @@ if __name__ == '__main__':
                        "dimensions": args.dimensions,
                        "architecture": args.architecture,
                        "resnet_architecture": args.resnet_architecture,
-                       "transformer_encoder_layers": args.encoder_layers,
-                       "transformer_num_heads": args.num_heads,
+                       "num_heads": args.num_heads,
                        "dataset": args.dataset,
                    })
     except:
@@ -236,7 +233,6 @@ if __name__ == '__main__':
                 )
                 opt.step()
                 sched.step()
-            loss_t = loss_t
             loss_t = np.mean(loss_t)
 
             # Evaluation
@@ -251,7 +247,6 @@ if __name__ == '__main__':
                     out = model(x, pos)
                     loss = obj(out, target)
                     loss_e.append(loss.item())
-
             loss_e = np.mean(loss_e)
 
             # yapf: disable
