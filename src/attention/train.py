@@ -170,7 +170,7 @@ if __name__ == '__main__':
             args.resnet_state,
             args.size,
             args.dimensions,
-            num_heads=3,
+            num_heads=args.num_heads,
         ).to(device)
     elif args.architecture == 'attention-segmenter-in':
         assert args.resnet_architecture is not None

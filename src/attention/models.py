@@ -96,7 +96,7 @@ class AttentionSegmenter(torch.nn.Module):
         for dim in self.dims:
             self.q_fcns.append(torch.nn.Linear(dim, dim))
             self.k_fcns.append(torch.nn.Linear(dim, dim))
-            self.sefl_attn.append(torch.nn.MultiheadAttention(dim, 5))
+            self.self_attn.append(torch.nn.MultiheadAttention(dim, num_heads, batch_first=True))
 
     def freeze_resnet(self):
         freeze(self.embed)
@@ -113,12 +113,22 @@ class AttentionSegmenter(torch.nn.Module):
         for i in range(len(x)):
             xi = x[i]
             _, ds, xs, ys = xi.shape
-            xi = xi.reshape(bs, ss, ds, xs, ys)  # restore "original" shape
-            wi = self.poor_mans_attention[i](pos)  # compute attention weights
-            wi = wi.reshape(bs, ss, ds, 1, 1)  # reshape for element-wise mult
-            xi = torch.sum(xi * wi, dim=1)  # apply weights to create composite embedding
-            xi = torch.nn.functional.normalize(xi, p=2.0, dim=1)
-            y.append(xi)
+            xi = xi.reshape(bs, ss, ds, xs, ys)  # Restore "original" shape
+            stash = []
+            for j in range(xs):  # For every spatial nugget ...
+                for k in range(ys):  # ...
+                    # Compute Q
+                    qew = torch.mean(self.q_fcns[i](xi[:, :, :, j, k]), dim=1, keepdim=True)
+                    # Compute K
+                    kay = self.k_fcns[i](xi[:, :, :, j, k])
+                    # Get V
+                    vee = xi[:, :, :, j, k]
+                    # Stash results
+                    result, _ = self.self_attn[i](qew, kay, vee)
+                    stash.append(result)
+            # Retrieve and save results
+            stash = torch.stack(stash, dim=3).reshape(bs, ds, xs, ys)
+            y.append(stash)
         y = tuple(y)
         y = self.fpn(y)  # pass through fpn
         return y
