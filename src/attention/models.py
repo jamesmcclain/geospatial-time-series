@@ -138,6 +138,7 @@ class AttentionSegmenter(torch.nn.Module):
 class AttentionSegmenterIn(AttentionSegmenter):
 
     def __init__(self, arch, state, size, d_model: int = 512, clss: int = 1):
+        raise NotImplementedError()
         super().__init__(arch, state, size, d_model, clss)
         del self.poor_mans_attention
         # self.poor_mans_attention = torch.nn.Sequential(
@@ -162,6 +163,7 @@ class AttentionSegmenterIn(AttentionSegmenter):
 class AttentionSegmenterOut(AttentionSegmenter):
 
     def __init__(self, arch, state, size, d_model: int = 512, clss: int = 1):
+        raise NotImplementedError()
         super().__init__(arch, state, size, d_model, clss)
         del self.poor_mans_attention
         self.poor_mans_attention = torch.nn.Sequential(
