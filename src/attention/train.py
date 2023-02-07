@@ -264,6 +264,7 @@ if __name__ == '__main__':
                     "loss train": loss_t,
                     "loss eval": loss_e,
                 }
+                wandb.log(wandb_dict)
             except:
                 pass
 
