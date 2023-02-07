@@ -65,7 +65,7 @@ class EntropyLoss(torch.nn.Module):
 
 class AttentionSegmenter(torch.nn.Module):
 
-    def __init__(self, arch, state, size, d_model: int = 512, clss: int = 1):
+    def __init__(self, arch, state, size, d_model: int = 512, clss: int = 4, num_heads=1):
         super().__init__()
 
         self.resnet = torch.hub.load(
@@ -88,25 +88,21 @@ class AttentionSegmenter(torch.nn.Module):
         if arch in {'resnet18', 'resnet34'}:
             self.dims = [64, 64, 128, 256, 512, 512]
         else:
-            raise Exception()
+            raise Exception(f'Not prepared for {arch}')
 
-        self.poor_mans_attention = torch.nn.ModuleList()
+        self.self_attn = torch.nn.ModuleList()
+        self.q_fcns = torch.nn.ModuleList()
+        self.k_fcns = torch.nn.ModuleList()
         for dim in self.dims:
-            self.poor_mans_attention.append(
-                torch.nn.Sequential(
-                    torch.nn.Linear(d_model, dim),
-                    torch.nn.ReLU(),
-                    torch.nn.Linear(dim, dim),
-                    torch.nn.ReLU(),
-                    torch.nn.Linear(dim, dim),
-                    torch.nn.ReLU(),
-                ))
+            self.q_fcns.append(torch.nn.Linear(dim, dim))
+            self.k_fcns.append(torch.nn.Linear(dim, dim))
+            self.sefl_attn.append(torch.nn.MultiheadAttention(dim, 5))
 
     def freeze_resnet(self):
-        freeze(self.resnet)
+        freeze(self.embed)
 
     def unfreeze_resnet(self):
-        unfreeze(self.resnet)
+        unfreeze(self.embed)
 
     def forward(self, x, pos):
         # yapf: disable
