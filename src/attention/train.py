@@ -62,15 +62,16 @@ def cli_parser():
     parser.add_argument('--batch-size', required=False, type=int, default=4)
 
     parser.add_argument('--dimensions', required=False, type=int, default=512)
-    parser.add_argument('--num-heads', required=False, type=int, default=1)
+    parser.add_argument('--num-heads', required=False, type=int, default=4)
+    parser.add_argument('--dropout', required=False, type=float, default=0.10)
 
-    parser.add_argument('--epochs', required=False, type=int, default=[13, 33], nargs='+')
-    parser.add_argument('--gamma', required=False, type=float, default=0.7)
-
-    parser.add_argument('--lr', required=False, type=float, default=1e-3)
+    parser.add_argument('--phases', required=False, type=int, default=2)
+    parser.add_argument('--epochs', required=False, type=int, default=[7, 13], nargs='+')
+    parser.add_argument('--gamma', required=False, type=float, default=[0.719686, 0.837678], nargs='+')
+    parser.add_argument('--lr', required=False, type=float, default=[1e-4, 1e-5],nargs='+')
     parser.add_argument('--clip', required=False, type=float, default=1)
 
-    parser.add_argument('--sequence-limit', required=False, type=int, default=10)
+    parser.add_argument('--sequence-limit', required=False, type=int, default=72)
 
     # Other
     parser.add_argument('--num-workers', required=False, type=int, default=1)
@@ -170,6 +171,7 @@ if __name__ == '__main__':
             args.size,
             args.dimensions,
             num_heads=args.num_heads,
+            dropout=args.dropout,
         ).to(device)
     elif args.architecture == 'attention-segmenter-in':
         assert args.resnet_architecture is not None
@@ -196,22 +198,26 @@ if __name__ == '__main__':
         weight=torch.Tensor([1., 1., 1., 1.]),
         ignore_index=-1,
     ).to(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    sched = torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=args.gamma)
 
     # ------------------------------------------------------------------------
 
     best = math.inf
-    for phase in range(2):
+    for phase in range(args.phases):
 
-        if phase == 0:
+        gamma = args.gamma[phase % len(args.gamma)]
+        lr = args.lr[phase % len(args.lr)]
+        lr = lr * np.power(gamma, phase//len(args.lr))
+        opt = torch.optim.AdamW(model.parameters(), lr=lr)
+        sched = torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=gamma)
+
+        if phase %2 == 1:
             model.freeze_resnet()
-            log.info('ResNet frozen')
-        if phase != 0:
+            log.info(f'ResNet frozen lr={lr}')
+        elif phase %2 == 0:
             model.unfreeze_resnet()
-            log.info('ResNet unfrozen')
+            log.info(f'ResNet unfrozen lr={lr}')
 
-        for epoch in range(1, args.epochs[phase] + 1):
+        for epoch in range(1, args.epochs[phase % len(args.epochs)] + 1):
             loss_t = []
             loss_e = []
 
@@ -234,7 +240,7 @@ if __name__ == '__main__':
                     args.clip,
                 )
                 opt.step()
-                sched.step()
+            sched.step()
             loss_t = np.mean(loss_t)
 
             # Evaluation
