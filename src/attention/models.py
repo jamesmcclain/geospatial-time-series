@@ -1,4 +1,5 @@
 import torch
+import math
 
 
 def freeze(m: torch.nn.Module) -> torch.nn.Module:
@@ -72,7 +73,7 @@ class AttentionSegmenter(torch.nn.Module):
                  d_model: int = 512,
                  clss: int = 4,
                  num_heads=1,
-                 dropout=1.0):
+                 dropout=0.0):
         super().__init__()
 
         self.resnet = torch.hub.load(
@@ -84,7 +85,8 @@ class AttentionSegmenter(torch.nn.Module):
             fpn_channels=256,
             in_channels=12,
             out_size=(size, size))
-        self.resnet.load_state_dict(torch.load(state), strict=True)
+        if state is not None:
+            self.resnet.load_state_dict(torch.load(state), strict=True)
         self.embed = self.resnet[0]
         self.fpn = self.resnet[1:]
         self.fpn[0][-1] = torch.nn.Conv2d(128,
@@ -108,10 +110,24 @@ class AttentionSegmenter(torch.nn.Module):
         self.self_attn = torch.nn.ModuleList()
         self.q_fcns = torch.nn.ModuleList()
         self.k_fcns = torch.nn.ModuleList()
+        self.v_fcns = torch.nn.ModuleList()
         for shape in self.shapes:
             dim = shape[0]
-            self.q_fcns.append(torch.nn.Linear(dim, dim))
-            self.k_fcns.append(torch.nn.Linear(dim, dim))
+            self.q_fcns.append(torch.nn.Sequential(
+                torch.nn.Linear(dim, dim // 4),
+                torch.nn.Dropout(p=dropout),
+                torch.nn.Linear(dim // 4, dim),
+                ))
+            self.k_fcns.append(torch.nn.Sequential(
+                torch.nn.Linear(dim, dim // 4),
+                torch.nn.Dropout(p=dropout),
+                torch.nn.Linear(dim // 4, dim),
+            ))
+            self.v_fcns.append(torch.nn.Sequential(
+                torch.nn.Linear(dim, dim // 4),
+                torch.nn.Dropout(p=0.10),
+                torch.nn.Linear(dim // 4, dim),
+            ))
             self.self_attn.append(
                 torch.nn.MultiheadAttention(dim,
                                             num_heads,
@@ -134,20 +150,24 @@ class AttentionSegmenter(torch.nn.Module):
         for shape in self.shapes:
             y.append(torch.zeros(bs, *shape, dtype=torch.float32, device=x[0].device))
 
+        pos = torch.nn.functional.normalize(pos, p=1.0, dim=1)
         for i in range(len(x)):
             xi = x[i]
+            xi = torch.nn.functional.normalize(xi, p=1.0, dim=1)
+
             shape = self.shapes[i]
 
             xi = xi.reshape(bs, ss, *shape)  # Restore "original" shape
             xi = torch.transpose(xi, 2, 4)  # move embeddngs to end
             xi = torch.transpose(xi, 1, 2)  # move spatial dimenson up
             xi = torch.transpose(xi, 2, 3)  # move other spatial dimension up
-            # V
-            vee = xi = xi.reshape(-1, ss, shape[0])  # put batch and spatial dimensions together
+            xi = xi.reshape(-1, ss, shape[0])  # put batch and spatial dimensions together
             # Q
             qew = torch.mean(self.q_fcns[i](xi), dim=1, keepdim=True)
             # K
             kay = self.k_fcns[i](xi)
+            # V
+            vee = self.v_fcns[i](xi)
 
             # Use MultiheadAttention block
             result, _ = self.self_attn[i](qew, kay, vee)

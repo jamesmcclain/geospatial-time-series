@@ -17,13 +17,11 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
                  size: int = 32,
                  dimensions: int = 512,
                  sequence_limit: int = 10,
-                 digest_labels: bool = False,
                  evaluation: bool = False):
         self.size = size
         assert dimensions % 2 == 0
         self.dimensions = dimensions
         self.sequence_limit = min(sequence_limit, len(series_paths))
-        self.digest_labels = digest_labels
         self.evaluation = evaluation
 
         self.data = []
@@ -56,11 +54,11 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
                 assert self.width == ds.width
                 assert self.bands == ds.count
 
-                width80 = int(width * 0.50)  # sic
+                width50 = int(width * 0.50)  # sic
                 if self.evaluation == False:
-                    w = rio.windows.Window(0, 0, width80, height)
+                    w = rio.windows.Window(0, 0, width50, height)
                 elif self.evaluation == True:
-                    w = rio.windows.Window(width80, 0, width - width80, height)
+                    w = rio.windows.Window(width50, 0, width - width50, height)
 
                 month = int(filename.split('/')[-4])
                 day = int(filename.split('/')[-3])
@@ -93,14 +91,11 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
 
         imagery = self.data[:, :, y:(y + size), x:(x + size)]
         labels = self.labels[0, y:(y + size), x:(x + size)]
-        if self.digest_labels:
-            labels = np.array([
-                np.mean(labels == 1),  # farms
-                # np.mean(labels == 2),  # forests
-                # np.mean(labels == 3),  # roads
-            ]).astype(np.float32)
-        else:
-            labels = labels.astype(np.int64)
+        # other = 0
+        # farms = 1
+        # forest = 2
+        # roads = 3
+        labels = labels.astype(np.int64)
 
         # Sample from a subset of the mosaics
         ss, _, _, _ = imagery.shape
@@ -109,6 +104,24 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
         indxs = (indxs + offset) % ss
         imagery = imagery[indxs]
         pos_encoding = self.pos_encoding[indxs]
+
+        # Poor man's augmentation
+        dirty = False
+        if random.random() > 0.5:
+            imagery = np.transpose(imagery, axes=(0, 1, 3, 2))
+            labels = np.transpose(labels, axes=(1,0))
+            dirty = True
+        if random.random() > 0.5:
+            imagery = np.flip(imagery, axis=2)
+            labels = np.flip(labels, axis=0)
+            dirty = True
+        if random.random() > 0.5:
+            imagery = np.flip(imagery, axis=3)
+            labels = np.flip(labels, axis=1)
+            dirty = True
+        if dirty:
+            imagery = np.copy(imagery)
+            labels = np.copy(labels)
 
         return (imagery, labels, pos_encoding)
 
