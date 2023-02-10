@@ -15,8 +15,8 @@ from PIL import Image
 
 from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
                       RawSeriesDataset)
-from models import (AttentionSegmenter,
-                    AttentionSegmenterIn, AttentionSegmenterOut)
+from models import (AttentionSegmenter, AttentionSegmenterIn,
+                    AttentionSegmenterOut)
 
 ARCHITECTURES = [
     'attention-segmenter',
@@ -24,7 +24,7 @@ ARCHITECTURES = [
     'attention-segmenter-out',
 ]
 DATASETS = ['in-memory-seasonal']
-RESNETS = ['resnet18', 'resnet34', 'resnet50']
+RESNETS = ['resnet18', 'resnet34']
 
 
 def worker_init_fn(i):
@@ -44,6 +44,8 @@ def cli_parser():
     # yapf: disable
     parser = argparse.ArgumentParser()
 
+    parser.add_argument('--device', required=False, type=str, default='cuda', choices=['cuda', 'cpu'])
+
     # Dataset, model type, input, output
     parser.add_argument('--architecture', required=True, type=str, choices=ARCHITECTURES)
     parser.add_argument('--dataset', required=True, type=str, choices=DATASETS)
@@ -60,18 +62,19 @@ def cli_parser():
     parser.add_argument('--batch-size', required=False, type=int, default=4)
 
     parser.add_argument('--dimensions', required=False, type=int, default=512)
-    parser.add_argument('--num-heads', required=False, type=int, default=1)
+    parser.add_argument('--num-heads', required=False, type=int, default=4)
+    parser.add_argument('--dropout', required=False, type=float, default=0.10)
 
-    parser.add_argument('--epochs', required=False, type=int, default=[13, 33], nargs='+')
-    parser.add_argument('--gamma', required=False, type=float, default=0.7)
-
-    parser.add_argument('--lr', required=False, type=float, default=1e-3)
+    parser.add_argument('--phases', required=False, type=int, default=2)
+    parser.add_argument('--epochs', required=False, type=int, default=[7, 13], nargs='+')
+    parser.add_argument('--gamma', required=False, type=float, default=[0.719686, 0.837678], nargs='+')
+    parser.add_argument('--lr', required=False, type=float, default=[1e-4, 1e-5],nargs='+')
     parser.add_argument('--clip', required=False, type=float, default=1)
 
-    parser.add_argument('--sequence-limit', required=False, type=int, default=10)
+    parser.add_argument('--sequence-limit', required=False, type=int, default=72)
 
     # Other
-    parser.add_argument('--num-workers', required=False, type=int, default=1)
+    parser.add_argument('--num-workers', required=False, type=int, default=5)
     parser.add_argument('--wandb-name', required=False, type=str, default=None)
 
     return parser
@@ -90,6 +93,7 @@ if __name__ == '__main__':
     dataloader_cfg['batch_size'] = args.batch_size
     dataloader_cfg['num_workers'] = args.num_workers
 
+    class_names = ["other", "farm", "forest", "road"]
     log.info(args.__dict__)
 
     try:
@@ -156,7 +160,7 @@ if __name__ == '__main__':
 
     # ------------------------------------------------------------------------
 
-    device = torch.device('cuda')
+    device = torch.device(args.device)
 
     if args.architecture == 'attention-segmenter':
         assert args.resnet_architecture is not None
@@ -168,6 +172,7 @@ if __name__ == '__main__':
             args.size,
             args.dimensions,
             num_heads=args.num_heads,
+            dropout=args.dropout,
         ).to(device)
     elif args.architecture == 'attention-segmenter-in':
         assert args.resnet_architecture is not None
@@ -191,31 +196,37 @@ if __name__ == '__main__':
         ).to(device)
 
     obj = torch.nn.CrossEntropyLoss(
-        weight=torch.Tensor([1., 1., 1., 1.]),
+        weight=torch.Tensor([0.25, 1., 0.25, 0.25]),
+        # weight=torch.Tensor([1., 1., 1., 1.]),
         ignore_index=-1,
     ).to(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    sched = torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=args.gamma)
 
     # ------------------------------------------------------------------------
 
-    best = math.inf
-    for phase in range(2):
+    best = -math.inf
+    for phase in range(args.phases):
 
-        if phase == 0:
+        gamma = args.gamma[phase % len(args.gamma)]
+        lr = args.lr[phase % len(args.lr)]
+        lr = lr * np.power(gamma, phase // len(args.lr))
+        opt = torch.optim.AdamW(model.parameters(), lr=lr)
+        sched = torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=gamma)
+
+        if phase % 2 == 1:
             model.freeze_resnet()
-            log.info('ResNet frozen')
-        if phase != 0:
+            log.info(f'ResNet frozen lr={lr}')
+        elif phase % 2 == 0:
             model.unfreeze_resnet()
-            log.info('ResNet unfrozen')
+            log.info(f'ResNet unfrozen lr={lr}')
 
-        for epoch in range(1, args.epochs[phase] + 1):
+        for epoch in range(1, args.epochs[phase % len(args.epochs)] + 1):
             loss_t = []
             loss_e = []
 
             # Train
             model.train()
-            for _ in tqdm.tqdm(range(0, args.train_batches), desc=f'Epoch {epoch}: training'):
+            for _ in tqdm.tqdm(range(0, args.train_batches),
+                               desc=f'Epoch {epoch}: training'):
                 opt.zero_grad()
 
                 batch = next(train_dl)
@@ -232,14 +243,20 @@ if __name__ == '__main__':
                     args.clip,
                 )
                 opt.step()
-                sched.step()
+            sched.step()
             loss_t = np.mean(loss_t)
 
             # Evaluation
             model.eval()
             batches = args.eval_batches
+            predictions = []
+            groundtruth = []
+            recall = []
+            precision = []
+            f1 = []
             with torch.no_grad():
-                for _ in tqdm.tqdm(range(0, args.eval_batches), desc=f'Epoch {epoch}: evaluation'):
+                for _ in tqdm.tqdm(range(0, args.eval_batches),
+                                   desc=f'Epoch {epoch}: evaluation'):
                     batch = next(eval_dl)
                     x = batch[0].to(device)
                     pos = batch[2].to(device)
@@ -247,25 +264,56 @@ if __name__ == '__main__':
                     out = model(x, pos)
                     loss = obj(out, target)
                     loss_e.append(loss.item())
+                    predictions.append(
+                        np.argmax(out.detach().cpu().numpy(),
+                                  axis=1).flatten())
+                    groundtruth.append(
+                        batch[1].detach().cpu().numpy().flatten())
             loss_e = np.mean(loss_e)
+            predictions = np.concatenate(predictions)
+            groundtruth = np.concatenate(groundtruth)
+            accuracy = (predictions == groundtruth).mean()
+            for i in range(4):
+                # yapf: disable
+                _recall = ((predictions == i) * (groundtruth == i)).sum() / ((groundtruth == i).sum() + 1e-6) + 1e-6
+                _precision = ((predictions == i) * (groundtruth == i)).sum() / ((predictions == i).sum() + 1e-6) + 1e-6
+                _f1 = 2.0 / ((1 / _recall) + (1 / _precision))
+                recall.append(_recall)
+                precision.append(_precision)
+                f1.append(_f1)
+                # yapf: enable
 
             # yapf: disable
-            if loss_e < best:
-                best = loss_e
-                log.info(f'✓ Epoch={epoch} train={loss_t} eval={loss_e}')
+            if f1[1] > best:
+                best = f1[1]
+                log.info(f'✓ Epoch={epoch} train={loss_t} eval={loss_e} accuracy={accuracy} farm_recall={recall[1]} farm_precision={precision[1]} farm_f1={f1[1]}')
                 if args.output_dir:
                     torch.save(model.state_dict(), f'{args.output_dir}/{args.architecture}-{args.resnet_architecture}-best.pth')
             else:
-                log.info(f'✗ Epoch={epoch} train={loss_t} eval={loss_e}')
+                log.info(f'✗ Epoch={epoch} train={loss_t} eval={loss_e} accuracy={accuracy} farm_recall={recall[1]} farm_precision={precision[1]} farm_f1={f1[1]}')
             # yapf: enable
 
             try:
                 wandb_dict = {
                     "loss train": loss_t,
                     "loss eval": loss_e,
+                    "overall accuracy": accuracy,
                 }
+                for i, name in enumerate(class_names):
+                    wandb_dict.update({
+                        f'{name} recall': recall[i],
+                        f'{name} precision': precision[i],
+                        f'{name} f1': f1[i],
+                    })
+                wandb.log(wandb_dict)
             except:
                 pass
+
+    conf_mat = wandb.plot.confusion_matrix(probs=None,
+                                           y_true=groundtruth,
+                                           preds=predictions,
+                                           class_names=class_names)
+    wandb.log({"conf_mat": conf_mat})
 
     # yapf: disable
     if args.output_dir:
