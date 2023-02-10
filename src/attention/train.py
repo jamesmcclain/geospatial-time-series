@@ -15,8 +15,8 @@ from PIL import Image
 
 from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
                       RawSeriesDataset)
-from models import (AttentionSegmenter,
-                    AttentionSegmenterIn, AttentionSegmenterOut)
+from models import (AttentionSegmenter, AttentionSegmenterIn,
+                    AttentionSegmenterOut)
 
 ARCHITECTURES = [
     'attention-segmenter',
@@ -206,14 +206,14 @@ if __name__ == '__main__':
 
         gamma = args.gamma[phase % len(args.gamma)]
         lr = args.lr[phase % len(args.lr)]
-        lr = lr * np.power(gamma, phase//len(args.lr))
+        lr = lr * np.power(gamma, phase // len(args.lr))
         opt = torch.optim.AdamW(model.parameters(), lr=lr)
         sched = torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=gamma)
 
-        if phase %2 == 1:
+        if phase % 2 == 1:
             model.freeze_resnet()
             log.info(f'ResNet frozen lr={lr}')
-        elif phase %2 == 0:
+        elif phase % 2 == 0:
             model.unfreeze_resnet()
             log.info(f'ResNet unfrozen lr={lr}')
 
@@ -223,7 +223,8 @@ if __name__ == '__main__':
 
             # Train
             model.train()
-            for _ in tqdm.tqdm(range(0, args.train_batches), desc=f'Epoch {epoch}: training'):
+            for _ in tqdm.tqdm(range(0, args.train_batches),
+                               desc=f'Epoch {epoch}: training'):
                 opt.zero_grad()
 
                 batch = next(train_dl)
@@ -247,7 +248,8 @@ if __name__ == '__main__':
             model.eval()
             batches = args.eval_batches
             with torch.no_grad():
-                for _ in tqdm.tqdm(range(0, args.eval_batches), desc=f'Epoch {epoch}: evaluation'):
+                for _ in tqdm.tqdm(range(0, args.eval_batches),
+                                   desc=f'Epoch {epoch}: evaluation'):
                     batch = next(eval_dl)
                     x = batch[0].to(device)
                     pos = batch[2].to(device)

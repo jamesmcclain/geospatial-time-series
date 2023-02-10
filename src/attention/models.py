@@ -65,7 +65,14 @@ class EntropyLoss(torch.nn.Module):
 
 class AttentionSegmenter(torch.nn.Module):
 
-    def __init__(self, arch, state, size, d_model: int = 512, clss: int = 4, num_heads=1, dropout=1.0):
+    def __init__(self,
+                 arch,
+                 state,
+                 size,
+                 d_model: int = 512,
+                 clss: int = 4,
+                 num_heads=1,
+                 dropout=1.0):
         super().__init__()
 
         self.resnet = torch.hub.load(
@@ -105,7 +112,11 @@ class AttentionSegmenter(torch.nn.Module):
             dim = shape[0]
             self.q_fcns.append(torch.nn.Linear(dim, dim))
             self.k_fcns.append(torch.nn.Linear(dim, dim))
-            self.self_attn.append(torch.nn.MultiheadAttention(dim, num_heads, batch_first=True, dropout=dropout))
+            self.self_attn.append(
+                torch.nn.MultiheadAttention(dim,
+                                            num_heads,
+                                            batch_first=True,
+                                            dropout=dropout))
 
     def freeze_resnet(self):
         freeze(self.embed)
@@ -164,7 +175,6 @@ class AttentionSegmenterIn(AttentionSegmenter):
         # )
         self.poor_mans_attention = torch.nn.Linear(d_model, 12)
         self.stash = None
-
 
     def forward(self, x, pos):
         bs, ss, cs, xs, ys = x.shape
