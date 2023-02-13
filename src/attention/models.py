@@ -86,7 +86,7 @@ class AttentionSegmenter(torch.nn.Module):
             in_channels=12,
             out_size=(size, size))
         if state is not None:
-            self.resnet.load_state_dict(torch.load(state), strict=True)
+            self.resnet.load_state_dict(torch.load(state, map_location=torch.device('cpu')), strict=True)
         self.embed = self.resnet[0]
         self.fpn = self.resnet[1:]
         self.fpn[0][-1] = torch.nn.Conv2d(128,
@@ -150,22 +150,27 @@ class AttentionSegmenter(torch.nn.Module):
         for shape in self.shapes:
             y.append(torch.zeros(bs, *shape, dtype=torch.float32, device=x[0].device))
 
-        pos = torch.nn.functional.normalize(pos, p=1.0, dim=1)
         for i in range(len(x)):
+            shape = self.shapes[i]
+            embed_dims = shape[0]
+            posi = pos[:, :, :embed_dims]
+            posi = posi.reshape(bs, 1, 1, ss, embed_dims)
+            posi = torch.nn.functional.normalize(posi, p=1.0, dim=4)
+
             xi = x[i]
             xi = torch.nn.functional.normalize(xi, p=1.0, dim=1)
-
-            shape = self.shapes[i]
 
             xi = xi.reshape(bs, ss, *shape)  # Restore "original" shape
             xi = torch.transpose(xi, 2, 4)  # move embeddngs to end
             xi = torch.transpose(xi, 1, 2)  # move spatial dimenson up
             xi = torch.transpose(xi, 2, 3)  # move other spatial dimension up
-            xi = xi.reshape(-1, ss, shape[0])  # put batch and spatial dimensions together
+            xi_prime = xi
+            xi_prime = (posi + xi).reshape(-1, ss, embed_dims)  # put batch and spatial dimensions together
+            xi = xi.reshape(-1, ss, embed_dims)  # put batch and spatial dimensions together
             # Q
-            qew = torch.mean(self.q_fcns[i](xi), dim=1, keepdim=True)
+            qew = torch.mean(self.q_fcns[i](xi_prime), dim=1, keepdim=True)
             # K
-            kay = self.k_fcns[i](xi)
+            kay = self.k_fcns[i](xi_prime)
             # V
             vee = self.v_fcns[i](xi)
 

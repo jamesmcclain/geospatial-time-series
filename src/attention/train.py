@@ -96,6 +96,9 @@ if __name__ == '__main__':
     class_names = ["other", "farm", "forest", "road"]
     log.info(args.__dict__)
 
+    assert args.phases >= len(args.epochs)
+    assert args.phases >= len(args.gamma)
+
     try:
         if args.wandb_name is None:
             raise Exception()
