@@ -1,3 +1,4 @@
+import re
 import glob
 import math
 import random
@@ -60,8 +61,13 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
                 elif self.evaluation == True:
                     w = rio.windows.Window(width50, 0, width - width50, height)
 
-                month = int(filename.split('/')[-4])
-                day = int(filename.split('/')[-3])
+                search = re.search(r'_20\d{2}(\d{2})(\d{2})_._L2[AB].tif', filename)
+                if bool(search):
+                    day = int(search[2])
+                    month = int(search[1])
+                else:
+                    month = int(filename.split('/')[-4])
+                    day = int(filename.split('/')[-3])
                 day = float(day + 31 * (month - 1))
                 day = 2.0 * math.pi * (day / 372)
 
