@@ -196,11 +196,8 @@ if __name__ == '__main__':
             args.dimensions,
         ).to(device)
 
-    obj = torch.nn.CrossEntropyLoss(
-        weight=torch.Tensor([0.25, 1., 0.25, 0.]),
-        # weight=torch.Tensor([1., 1., 1., 1.]),
-        ignore_index=-1,
-    ).to(device)
+    obj_ce = torch.nn.CrossEntropyLoss(ignore_index=-1).to(device)
+    obj_bce = torch.nn.BCEWithLogitsLoss().to(device)
 
     # ------------------------------------------------------------------------
 
@@ -234,7 +231,9 @@ if __name__ == '__main__':
                 pos = batch[2].to(device)
                 target = batch[1].to(device)
                 out = model(x, pos)
-                loss = obj(out, target)
+                farms_pred = out[:, 1, :, :] - out[:, 2, :, :]
+                farms_gt = (target == 1).float() - (target == 2).float()
+                loss = obj_ce(out, target) + obj_bce(farms_pred, farms_gt)
                 loss_t.append(loss.item())
 
                 loss.backward()
@@ -262,7 +261,9 @@ if __name__ == '__main__':
                     pos = batch[2].to(device)
                     target = batch[1].to(device)
                     out = model(x, pos)
-                    loss = obj(out, target)
+                    # farms_pred = out[:, 1, :, :]
+                    # farms_gt = (target == 1).float()
+                    loss = obj_ce(out, target) #+ obj_bce(farms_pred, farms_gt)
                     loss_e.append(loss.item())
                     predictions.append(
                         np.argmax(out.detach().cpu().numpy(),
