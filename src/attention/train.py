@@ -15,7 +15,7 @@ from PIL import Image
 
 from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
                       RawSeriesDataset)
-from models import (AttentionSegmenter, AttentionSegmenterIn,
+from models import (AttentionSegmenter, EntropyLoss, AttentionSegmenterIn,
                     AttentionSegmenterOut)
 
 ARCHITECTURES = [
@@ -69,7 +69,7 @@ def cli_parser():
     parser.add_argument('--epochs', required=False, type=int, default=[13, 7], nargs='+')
     parser.add_argument('--gamma', required=False, type=float, default=[0.837678, 0.719686], nargs='+')
     parser.add_argument('--lr', required=False, type=float, default=[1e-5, 1e-5],nargs='+')
-    parser.add_argument('--clip', required=False, type=float, default=1)
+    parser.add_argument('--clip', required=False, type=float, default=None)
 
     parser.add_argument('--sequence-limit', required=False, type=int, default=72)
 
@@ -79,6 +79,39 @@ def cli_parser():
 
     return parser
     # yapf: enable
+
+
+class SpecialLoss(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.cross = torch.nn.CrossEntropyLoss(ignore_index=-1)
+        # self.bce = torch.nn.BCEWithLogitsLoss()
+        # # self.entropy = EntropyLoss(mu=0., sigma=1.)
+        # self.entropy = EntropyLoss()
+
+    def forward(self, x: torch.Tensor, target: torch.Tensor):
+        y = torch.nn.functional.softmax(x, dim=1)
+
+        loss = 0.
+
+        # for i in range(0, 4):
+        #     tp = torch.sum(y[:, i, :, :] * (target == i).float())
+        #     gtp = torch.sum((target == i).float())
+        #     recall = tp/(gtp + 1e-6)
+        #     loss += 0.25 * recall
+        # pp = torch.sum(y[:, 1, :, :])
+        # precision = tp/(pp + 1e-6)
+        # f1 = 2. /((1./recall) + (1./precision))
+        # loss = recall - f1
+        # loss = 0.
+        # # loss += self.bce(x[:, 1, :, :], (target == 1).float())
+        loss += self.cross(x, target)  # correctness
+        # # loss -= self.entropy(torch.mean(x, dim=(2,3)))  # novelty
+        # # loss += torch.exp(torch.mean(y[:, 0, : ,:]))  # do not get stuck on "other"
+        # # loss += torch.exp(torch.mean(y[:, 1, : ,:]))  # do not get stuck on "farm"
+        # # loss += torch.exp(torch.mean(y[:, 2, : ,:]))  # do not get stuck on "forest"
+        return loss
 
 
 if __name__ == '__main__':
@@ -196,8 +229,7 @@ if __name__ == '__main__':
             args.dimensions,
         ).to(device)
 
-    obj_ce = torch.nn.CrossEntropyLoss(ignore_index=-1).to(device)
-    obj_bce = torch.nn.BCEWithLogitsLoss().to(device)
+    obj = SpecialLoss().to(device)
 
     # ------------------------------------------------------------------------
 
@@ -231,16 +263,15 @@ if __name__ == '__main__':
                 pos = batch[2].to(device)
                 target = batch[1].to(device)
                 out = model(x, pos)
-                farms_pred = out[:, 1, :, :] - out[:, 2, :, :]
-                farms_gt = (target == 1).float() - (target == 2).float()
-                loss = obj_ce(out, target) + obj_bce(farms_pred, farms_gt)
+                loss = obj(out, target)
                 loss_t.append(loss.item())
 
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(
-                    model.parameters(),
-                    args.clip,
-                )
+                if args.clip is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(),
+                        args.clip,
+                    )
                 opt.step()
             sched.step()
             loss_t = np.mean(loss_t)
@@ -261,9 +292,7 @@ if __name__ == '__main__':
                     pos = batch[2].to(device)
                     target = batch[1].to(device)
                     out = model(x, pos)
-                    # farms_pred = out[:, 1, :, :]
-                    # farms_gt = (target == 1).float()
-                    loss = obj_ce(out, target) #+ obj_bce(farms_pred, farms_gt)
+                    loss = obj(out, target)
                     loss_e.append(loss.item())
                     predictions.append(
                         np.argmax(out.detach().cpu().numpy(),

@@ -114,19 +114,22 @@ class AttentionSegmenter(torch.nn.Module):
         for shape in self.shapes:
             dim = shape[0]
             self.q_fcns.append(torch.nn.Sequential(
-                torch.nn.Linear(dim, dim // 4),
-                torch.nn.Dropout(p=dropout),
-                torch.nn.Linear(dim // 4, dim),
+                torch.nn.Linear(dim, dim),
+                # torch.nn.Linear(dim, dim // 4),
+                # torch.nn.Dropout(p=dropout),
+                # torch.nn.Linear(dim // 4, dim),
                 ))
             self.k_fcns.append(torch.nn.Sequential(
-                torch.nn.Linear(dim, dim // 4),
-                torch.nn.Dropout(p=dropout),
-                torch.nn.Linear(dim // 4, dim),
+                torch.nn.Linear(dim, dim),
+                # torch.nn.Linear(dim, dim // 4),
+                # torch.nn.Dropout(p=dropout),
+                # torch.nn.Linear(dim // 4, dim),
             ))
             self.v_fcns.append(torch.nn.Sequential(
-                torch.nn.Linear(dim, dim // 4),
-                torch.nn.Dropout(p=0.10),
-                torch.nn.Linear(dim // 4, dim),
+                torch.nn.Linear(dim, dim),
+                # torch.nn.Linear(dim, dim // 4),
+                # torch.nn.Dropout(p=0.10),
+                # torch.nn.Linear(dim // 4, dim),
             ))
             self.self_attn.append(
                 torch.nn.MultiheadAttention(dim,
@@ -152,34 +155,35 @@ class AttentionSegmenter(torch.nn.Module):
 
         for i in range(len(x)):
             shape = self.shapes[i]
-            embed_dims = shape[0]
-            posi = pos[:, :, :embed_dims]
-            posi = posi.reshape(bs, 1, 1, ss, embed_dims)
-            posi = torch.nn.functional.normalize(posi, p=1.0, dim=4)
+            # embed_dims = shape[0]
+            # posi = pos[:, :, :embed_dims]
+            # posi = posi.reshape(bs, 1, 1, ss, embed_dims)
+            # posi = torch.nn.functional.normalize(posi, p=1.0, dim=4)
 
             xi = x[i]
-            xi = torch.nn.functional.normalize(xi, p=1.0, dim=1)
+            # xi = torch.nn.functional.normalize(xi, p=1.0, dim=1)
 
             xi = xi.reshape(bs, ss, *shape)  # Restore "original" shape
-            xi = torch.transpose(xi, 2, 4)  # move embeddngs to end
-            xi = torch.transpose(xi, 1, 2)  # move spatial dimenson up
-            xi = torch.transpose(xi, 2, 3)  # move other spatial dimension up
-            xi_prime = xi
-            xi_prime = (posi + xi).reshape(-1, ss, embed_dims)  # put batch and spatial dimensions together
-            xi = xi.reshape(-1, ss, embed_dims)  # put batch and spatial dimensions together
-            # Q
-            qew = torch.mean(self.q_fcns[i](xi_prime), dim=1, keepdim=True)
-            # K
-            kay = self.k_fcns[i](xi_prime)
-            # V
-            vee = self.v_fcns[i](xi)
+            # xi = torch.transpose(xi, 2, 4)  # move embeddngs to end
+            # xi = torch.transpose(xi, 1, 2)  # move spatial dimenson up
+            # xi = torch.transpose(xi, 2, 3)  # move other spatial dimension up
+            # xi_prime = xi
+            # xi_prime = (posi + xi).reshape(-1, ss, embed_dims)  # put batch and spatial dimensions together
+            # xi = xi.reshape(-1, ss, embed_dims)  # put batch and spatial dimensions together
+            # # Q
+            # qew = torch.mean(self.q_fcns[i](xi_prime), dim=1, keepdim=True)
+            # # K
+            # kay = self.k_fcns[i](xi_prime)
+            # # V
+            # vee = self.v_fcns[i](xi)
 
-            # Use MultiheadAttention block
-            result, _ = self.self_attn[i](qew, kay, vee)
-            result = result.reshape(bs, shape[1], shape[2], shape[0])
-            result = torch.transpose(result, 2, 3)
-            result = torch.transpose(result, 1, 2)
-            y[i] = result
+            # # Use MultiheadAttention block
+            # result, _ = self.self_attn[i](qew, kay, vee)
+            # result = result.reshape(bs, shape[1], shape[2], shape[0])
+            # result = torch.transpose(result, 2, 3)
+            # result = torch.transpose(result, 1, 2)
+            # y[i] = result
+            y[i] = torch.mean(xi, dim=1)
 
         y = self.fpn(tuple(y))  # pass through fpn
         return y
