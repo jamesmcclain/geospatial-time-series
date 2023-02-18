@@ -1,7 +1,7 @@
-import re
 import glob
 import math
 import random
+import re
 from typing import List
 
 import numpy as np
@@ -61,7 +61,8 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
                 elif self.evaluation == True:
                     w = rio.windows.Window(width50, 0, width - width50, height)
 
-                search = re.search(r'_20\d{2}(\d{2})(\d{2})_._L2[AB].tif', filename)
+                search = re.search(r'_20\d{2}(\d{2})(\d{2})_._L2[AB].tif',
+                                   filename)
                 if bool(search):
                     day = int(search[2])
                     month = int(search[1])
@@ -115,7 +116,7 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
         dirty = False
         if random.random() > 0.5:
             imagery = np.transpose(imagery, axes=(0, 1, 3, 2))
-            labels = np.transpose(labels, axes=(1,0))
+            labels = np.transpose(labels, axes=(1, 0))
             dirty = True
         if random.random() > 0.5:
             imagery = np.flip(imagery, axis=2)

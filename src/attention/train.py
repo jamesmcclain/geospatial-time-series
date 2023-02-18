@@ -15,8 +15,8 @@ from PIL import Image
 
 from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
                       RawSeriesDataset)
-from models import (AttentionSegmenter, EntropyLoss, AttentionSegmenterIn,
-                    AttentionSegmenterOut)
+from models import (AttentionSegmenter, AttentionSegmenterIn,
+                    AttentionSegmenterOut, EntropyLoss)
 
 ARCHITECTURES = [
     'attention-segmenter',
