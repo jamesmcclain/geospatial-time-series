@@ -95,22 +95,19 @@ class SpecialLoss(torch.nn.Module):
 
         loss = 0.
 
-        # for i in range(0, 4):
-        #     tp = torch.sum(y[:, i, :, :] * (target == i).float())
-        #     gtp = torch.sum((target == i).float())
-        #     recall = tp/(gtp + 1e-6)
-        #     loss += 0.25 * recall
-        # pp = torch.sum(y[:, 1, :, :])
-        # precision = tp/(pp + 1e-6)
-        # f1 = 2. /((1./recall) + (1./precision))
-        # loss = recall - f1
-        # loss = 0.
-        # # loss += self.bce(x[:, 1, :, :], (target == 1).float())
+        for i in range(0, 4):
+            total_pos = torch.sum(y[:, i, :, :] * (target == i).float())
+            gt_pos = torch.sum((target == i).float())
+            pred_pos = torch.sum(y[:, i, :, :])
+            recall = total_pos/(gt_pos + 1e-6)
+            precision = total_pos/(pred_pos + 1e-6)
+            loss -= recall
+            loss -= precision
+            loss -= 2. /((1./recall) + (1./precision))
+        loss /= 12.
+
         loss += self.cross(x, target)  # correctness
-        # # loss -= self.entropy(torch.mean(x, dim=(2,3)))  # novelty
-        # # loss += torch.exp(torch.mean(y[:, 0, : ,:]))  # do not get stuck on "other"
-        # # loss += torch.exp(torch.mean(y[:, 1, : ,:]))  # do not get stuck on "farm"
-        # # loss += torch.exp(torch.mean(y[:, 2, : ,:]))  # do not get stuck on "forest"
+
         return loss
 
 
