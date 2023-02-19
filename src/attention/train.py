@@ -57,19 +57,19 @@ def cli_parser():
     parser.add_argument('--target', required=False, type=str)
 
     # Hyperparameters
+    parser.add_argument('--batch-size', required=False, type=int, default=4)
     parser.add_argument('--eval-batches', required=False, type=int)
     parser.add_argument('--train-batches', required=False, type=int)
-    parser.add_argument('--batch-size', required=False, type=int, default=4)
 
     parser.add_argument('--dimensions', required=False, type=int, default=512)
-    parser.add_argument('--num-heads', required=False, type=int, default=4)
     parser.add_argument('--dropout', required=False, type=float, default=0.10)
+    parser.add_argument('--num-heads', required=False, type=int, default=4)
 
-    parser.add_argument('--phases', required=False, type=int, default=2)
+    parser.add_argument('--clip', required=False, type=float, default=None)
     parser.add_argument('--epochs', required=False, type=int, default=[13, 7], nargs='+')
     parser.add_argument('--gamma', required=False, type=float, default=[0.837678, 0.719686], nargs='+')
     parser.add_argument('--lr', required=False, type=float, default=[1e-5, 1e-5],nargs='+')
-    parser.add_argument('--clip', required=False, type=float, default=None)
+    parser.add_argument('--phases', required=False, type=int, default=2)
 
     parser.add_argument('--sequence-limit', required=False, type=int, default=72)
 
@@ -136,21 +136,33 @@ if __name__ == '__main__':
         project = f'geospatial-time-series {args.wandb_name}'
         wandb.init(project=project,
                    config={
-                       "learning_rate": args.lr,
-                       "training_batches": args.train_batches,
-                       "eval_batches": args.eval_batches,
-                       "epochs": args.epochs,
-                       "batch_size": args.batch_size,
-                       "gamma": args.gamma,
-                       "sequence_limit": args.sequence_limit,
-                       "sequence_length": len(args.series),
-                       "image_size": args.size,
-                       "dimensions": args.dimensions,
+                       "device": args.device,
+
                        "architecture": args.architecture,
-                       "resnet_architecture": args.resnet_architecture,
-                       "num_heads": args.num_heads,
                        "dataset": args.dataset,
+                       "image_size": args.size,
+                       "resnet_architecture": args.resnet_architecture,
+                       "resnet_state": args.resnet_state,
+                       "series_length": len(args.series),
+                       "target": args.target.split('/')[-1],
+
+                       "batch_size": args.batch_size,
+                       "eval_batches": args.eval_batches,
+                       "train_batches": args.train_batches,
+
+                       "dimensions": args.dimensions,
                        "dropout": args.dropout,
+                       "num_heads": args.num_heads,
+
+                       "clip": args.clip,
+                       "epochs": args.epochs,
+                       "gamma": args.gamma,
+                       "lr": args.lr,
+                       "phases": args.phases,
+
+                       "sequence_limit": args.sequence_limit,
+
+                       "num_workers": args.num_workers,
                    })
     except:
         log.info('No wandb')
