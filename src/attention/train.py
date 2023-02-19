@@ -95,18 +95,20 @@ class SpecialLoss(torch.nn.Module):
 
         loss = 0.
 
-        for i in range(0, 4):
+        # F1 scores
+        for i in [0, 1, 2]:
             total_pos = torch.sum(y[:, i, :, :] * (target == i).float())
             gt_pos = torch.sum((target == i).float())
             pred_pos = torch.sum(y[:, i, :, :])
-            recall = total_pos/(gt_pos + 1e-6)
-            precision = total_pos/(pred_pos + 1e-6)
+            recall = total_pos / (gt_pos + 1e-6)
+            precision = total_pos / (pred_pos + 1e-6)
             loss -= recall
             loss -= precision
-            loss -= 2. /((1./recall) + (1./precision))
-        loss /= 12.
+            # loss -= 2. / ((1. / recall) + (1. / precision))
+        loss /= 6.
 
-        loss += self.cross(x, target)  # correctness
+        # Segmentation correctness
+        loss += self.cross(x, target)
 
         return loss
 
@@ -128,6 +130,8 @@ if __name__ == '__main__':
 
     assert args.phases >= len(args.epochs)
     assert args.phases >= len(args.gamma)
+
+    device = torch.device(args.device)
 
     try:
         if args.wandb_name is None:
@@ -203,8 +207,6 @@ if __name__ == '__main__':
         eval_dl = iter(eval_dl)
 
     # ------------------------------------------------------------------------
-
-    device = torch.device(args.device)
 
     if args.architecture == 'attention-segmenter':
         assert args.resnet_architecture is not None
