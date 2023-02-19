@@ -16,7 +16,7 @@ from PIL import Image
 from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
                       RawSeriesDataset)
 from models import (AttentionSegmenter, AttentionSegmenterIn,
-                    AttentionSegmenterOut)
+                    AttentionSegmenterOut, EntropyLoss)
 
 ARCHITECTURES = [
     'attention-segmenter',
@@ -51,25 +51,25 @@ def cli_parser():
     parser.add_argument('--dataset', required=True, type=str, choices=DATASETS)
     parser.add_argument('--output-dir', required=False, type=str)
     parser.add_argument('--resnet-architecture', required=False, type=str, choices=RESNETS)
-    parser.add_argument('--resnet-state', required=False, type=str)
+    parser.add_argument('--resnet-state', required=False, type=str, default=None)
     parser.add_argument('--series', required=False, type=str, nargs='+')
     parser.add_argument('--size', required=False, type=int, default=256)
     parser.add_argument('--target', required=False, type=str)
 
     # Hyperparameters
+    parser.add_argument('--batch-size', required=False, type=int, default=4)
     parser.add_argument('--eval-batches', required=False, type=int)
     parser.add_argument('--train-batches', required=False, type=int)
-    parser.add_argument('--batch-size', required=False, type=int, default=4)
 
     parser.add_argument('--dimensions', required=False, type=int, default=512)
-    parser.add_argument('--num-heads', required=False, type=int, default=4)
     parser.add_argument('--dropout', required=False, type=float, default=0.10)
+    parser.add_argument('--num-heads', required=False, type=int, default=4)
 
+    parser.add_argument('--clip', required=False, type=float, default=None)
+    parser.add_argument('--epochs', required=False, type=int, default=[13, 7], nargs='+')
+    parser.add_argument('--gamma', required=False, type=float, default=[0.837678, 0.719686], nargs='+')
+    parser.add_argument('--lr', required=False, type=float, default=[1e-5, 1e-5],nargs='+')
     parser.add_argument('--phases', required=False, type=int, default=2)
-    parser.add_argument('--epochs', required=False, type=int, default=[7, 13], nargs='+')
-    parser.add_argument('--gamma', required=False, type=float, default=[0.719686, 0.837678], nargs='+')
-    parser.add_argument('--lr', required=False, type=float, default=[1e-4, 1e-5],nargs='+')
-    parser.add_argument('--clip', required=False, type=float, default=1)
 
     parser.add_argument('--sequence-limit', required=False, type=int, default=72)
 
@@ -79,6 +79,38 @@ def cli_parser():
 
     return parser
     # yapf: enable
+
+
+class SpecialLoss(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.cross = torch.nn.CrossEntropyLoss(ignore_index=-1)
+        # self.bce = torch.nn.BCEWithLogitsLoss()
+        # # self.entropy = EntropyLoss(mu=0., sigma=1.)
+        # self.entropy = EntropyLoss()
+
+    def forward(self, x: torch.Tensor, target: torch.Tensor):
+        y = torch.nn.functional.softmax(x, dim=1)
+
+        loss = 0.
+
+        # F1 scores
+        for i in [0, 1, 2]:
+            total_pos = torch.sum(y[:, i, :, :] * (target == i).float())
+            gt_pos = torch.sum((target == i).float())
+            pred_pos = torch.sum(y[:, i, :, :])
+            recall = total_pos / (gt_pos + 1e-6)
+            precision = total_pos / (pred_pos + 1e-6)
+            loss -= recall
+            loss -= precision
+            # loss -= 2. / ((1. / recall) + (1. / precision))
+        loss /= 6.
+
+        # Segmentation correctness
+        loss += self.cross(x, target)
+
+        return loss
 
 
 if __name__ == '__main__':
@@ -96,27 +128,45 @@ if __name__ == '__main__':
     class_names = ["other", "farm", "forest", "road"]
     log.info(args.__dict__)
 
+    assert args.phases >= len(args.epochs)
+    assert args.phases >= len(args.gamma)
+
+    device = torch.device(args.device)
+
     try:
         if args.wandb_name is None:
-            raise Exception('XXX')
+            raise Exception()
         import wandb
         project = f'geospatial-time-series {args.wandb_name}'
         wandb.init(project=project,
                    config={
-                       "learning_rate": args.lr,
-                       "training_batches": args.train_batches,
-                       "eval_batches": args.eval_batches,
-                       "epochs": args.epochs,
-                       "batch_size": args.batch_size,
-                       "gamma": args.gamma,
-                       "sequence_limit": args.sequence_limit,
-                       "sequence_length": len(args.series),
-                       "image_size": args.size,
-                       "dimensions": args.dimensions,
+                       "device": args.device,
+
                        "architecture": args.architecture,
-                       "resnet_architecture": args.resnet_architecture,
-                       "num_heads": args.num_heads,
                        "dataset": args.dataset,
+                       "image_size": args.size,
+                       "resnet_architecture": args.resnet_architecture,
+                       "resnet_state": args.resnet_state,
+                       "series_length": len(args.series),
+                       "target": args.target.split('/')[-1],
+
+                       "batch_size": args.batch_size,
+                       "eval_batches": args.eval_batches,
+                       "train_batches": args.train_batches,
+
+                       "dimensions": args.dimensions,
+                       "dropout": args.dropout,
+                       "num_heads": args.num_heads,
+
+                       "clip": args.clip,
+                       "epochs": args.epochs,
+                       "gamma": args.gamma,
+                       "lr": args.lr,
+                       "phases": args.phases,
+
+                       "sequence_limit": args.sequence_limit,
+
+                       "num_workers": args.num_workers,
                    })
     except:
         log.info('No wandb')
@@ -140,7 +190,6 @@ if __name__ == '__main__':
                                     size=args.size,
                                     dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
-                                    digest_labels='classifier' in args.architecture,
                                     evaluation=False),
             **dataloader_cfg,
         )
@@ -150,7 +199,6 @@ if __name__ == '__main__':
                                     size=args.size,
                                     dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
-                                    digest_labels='classifier' in args.architecture,
                                     evaluation=True),
             **dataloader_cfg,
         )
@@ -160,11 +208,8 @@ if __name__ == '__main__':
 
     # ------------------------------------------------------------------------
 
-    device = torch.device(args.device)
-
     if args.architecture == 'attention-segmenter':
         assert args.resnet_architecture is not None
-        assert args.resnet_state is not None
         assert args.dimensions is not None
         model = AttentionSegmenter(
             args.resnet_architecture,
@@ -195,11 +240,7 @@ if __name__ == '__main__':
             args.dimensions,
         ).to(device)
 
-    obj = torch.nn.CrossEntropyLoss(
-        weight=torch.Tensor([0.25, 1., 0.25, 0.25]),
-        # weight=torch.Tensor([1., 1., 1., 1.]),
-        ignore_index=-1,
-    ).to(device)
+    obj = SpecialLoss().to(device)
 
     # ------------------------------------------------------------------------
 
@@ -208,7 +249,6 @@ if __name__ == '__main__':
 
         gamma = args.gamma[phase % len(args.gamma)]
         lr = args.lr[phase % len(args.lr)]
-        lr = lr * np.power(gamma, phase // len(args.lr))
         opt = torch.optim.AdamW(model.parameters(), lr=lr)
         sched = torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=gamma)
 
@@ -238,10 +278,11 @@ if __name__ == '__main__':
                 loss_t.append(loss.item())
 
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(
-                    model.parameters(),
-                    args.clip,
-                )
+                if args.clip is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(),
+                        args.clip,
+                    )
                 opt.step()
             sched.step()
             loss_t = np.mean(loss_t)
@@ -309,11 +350,14 @@ if __name__ == '__main__':
             except:
                 pass
 
-    conf_mat = wandb.plot.confusion_matrix(probs=None,
-                                           y_true=groundtruth,
-                                           preds=predictions,
-                                           class_names=class_names)
-    wandb.log({"conf_mat": conf_mat})
+    try:
+        conf_mat = wandb.plot.confusion_matrix(probs=None,
+                                               y_true=groundtruth,
+                                               preds=predictions,
+                                               class_names=class_names)
+        wandb.log({"conf_mat": conf_mat})
+    except:
+        pass
 
     # yapf: disable
     if args.output_dir:
