@@ -72,6 +72,7 @@ def cli_parser():
     parser.add_argument('--phases', required=False, type=int, default=2)
 
     parser.add_argument('--sequence-limit', required=False, type=int, default=72)
+    parser.add_argument('--howmuch', required=False, type=float, default=1.0)
 
     # Other
     parser.add_argument('--num-workers', required=False, type=int, default=5)
@@ -165,6 +166,7 @@ if __name__ == '__main__':
                        "phases": args.phases,
 
                        "sequence_limit": args.sequence_limit,
+                       "howmuch": args.howmuch,
 
                        "num_workers": args.num_workers,
                    })
@@ -190,6 +192,7 @@ if __name__ == '__main__':
                                     size=args.size,
                                     dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
+                                    howmuch=args.howmuch,
                                     evaluation=False),
             **dataloader_cfg,
         )
@@ -199,6 +202,7 @@ if __name__ == '__main__':
                                     size=args.size,
                                     dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
+                                    howmuch=args.howmuch,
                                     evaluation=True),
             **dataloader_cfg,
         )

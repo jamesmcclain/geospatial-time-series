@@ -98,14 +98,15 @@ class AttentionSegmenter(torch.nn.Module):
                                           stride=(1, 1))
 
         self.arch = arch
+        self.size = size
         if self.arch in {'resnet18', 'resnet34'}:
             self.shapes = [
-                [64, 64, 64],
-                [64, 64, 64],
-                [128, 32, 32],
-                [256, 16, 16],
-                [512, 8, 8],
-                [512, 8, 8],
+                [64, size//4, size//4],
+                [64, size//4, size//4],
+                [128, size//8, size//8],
+                [256, size//16, size//16],
+                [512, size//32, size//32],
+                [512, size//32, size//32],
             ]
         else:
             raise Exception(f'Not prepared for {self.arch}')

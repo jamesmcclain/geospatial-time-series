@@ -18,7 +18,9 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
                  size: int = 32,
                  dimensions: int = 512,
                  sequence_limit: int = 10,
-                 evaluation: bool = False):
+                 howmuch = 1.0,
+                 evaluation: bool = False,
+                 ):
         self.size = size
         assert dimensions % 2 == 0
         self.dimensions = dimensions
@@ -55,11 +57,13 @@ class InMemorySeasonalDataset(torch.utils.data.IterableDataset):
                 assert self.width == ds.width
                 assert self.bands == ds.count
 
-                width50 = int(width * 0.50)  # sic
+                height50 = int(height * .50)
+                width50 = int(width * .50)
+                widthx = int(width * howmuch * 0.50)
                 if self.evaluation == False:
-                    w = rio.windows.Window(0, 0, width50, height)
+                    w = rio.windows.Window(width50 - widthx, 0, 2 * widthx, height50)
                 elif self.evaluation == True:
-                    w = rio.windows.Window(width50, 0, width - width50, height)
+                    w = rio.windows.Window(width50 - widthx, height50, 2 * widthx, height - height50)
 
                 search = re.search(r'_20\d{2}(\d{2})(\d{2})_._L2[AB].tif',
                                    filename)
