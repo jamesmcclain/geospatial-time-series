@@ -71,7 +71,6 @@ class AttentionSegmenter(torch.nn.Module):
                  arch,
                  state,
                  size,
-                 d_model: int = 512,
                  clss: int = 4,
                  num_heads=1,
                  dropout=0.0):

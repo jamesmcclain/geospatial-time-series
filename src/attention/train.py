@@ -17,11 +17,7 @@ from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
                       RawSeriesDataset)
 from models import (AttentionSegmenter, EntropyLoss)
 
-ARCHITECTURES = [
-    'attention-segmenter',
-    'attention-segmenter-in',
-    'attention-segmenter-out',
-]
+ARCHITECTURES = ['attention-segmenter']
 DATASETS = ['in-memory-seasonal']
 RESNETS = ['resnet18', 'resnet34']
 
@@ -50,9 +46,9 @@ def cli_parser():
     parser.add_argument('--dataset', required=True, type=str, choices=DATASETS)
     parser.add_argument('--model-state', required=False, type=str, default=None)
     parser.add_argument('--output-dir', required=False, type=str)
-    parser.add_argument('--resnet-architecture', required=False, type=str, choices=RESNETS)
+    parser.add_argument('--resnet-architecture', required=True, type=str, choices=RESNETS)
     parser.add_argument('--resnet-state', required=False, type=str, default=None)
-    parser.add_argument('--series', required=False, type=str, nargs='+')
+    parser.add_argument('--series', required=True, type=str, nargs='+')
     parser.add_argument('--size', required=False, type=int, default=256)
     parser.add_argument('--target', required=False, type=str)
 
@@ -61,7 +57,7 @@ def cli_parser():
     parser.add_argument('--eval-batches', required=False, type=int)
     parser.add_argument('--train-batches', required=False, type=int)
 
-    parser.add_argument('--dimensions', required=False, type=int, default=512)
+    parser.add_argument('--dimensions', required=True, type=int, default=512)
     parser.add_argument('--dropout', required=False, type=float, default=0.10)
     parser.add_argument('--num-heads', required=False, type=int, default=4)
 
@@ -208,13 +204,10 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------------
 
     if args.architecture == 'attention-segmenter':
-        assert args.resnet_architecture is not None
-        assert args.dimensions is not None
         model = AttentionSegmenter(
             args.resnet_architecture,
             args.resnet_state,
             args.size,
-            args.dimensions,
             num_heads=args.num_heads,
             dropout=args.dropout,
         )
