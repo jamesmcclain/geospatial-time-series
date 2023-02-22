@@ -49,6 +49,7 @@ def cli_parser():
     # Dataset, model type, input, output
     parser.add_argument('--architecture', required=True, type=str, choices=ARCHITECTURES)
     parser.add_argument('--dataset', required=True, type=str, choices=DATASETS)
+    parser.add_argument('--model-state', required=False, type=str, default=None)
     parser.add_argument('--output-dir', required=False, type=str)
     parser.add_argument('--resnet-architecture', required=False, type=str, choices=RESNETS)
     parser.add_argument('--resnet-state', required=False, type=str, default=None)
@@ -142,32 +143,27 @@ if __name__ == '__main__':
         wandb.init(project=project,
                    config={
                        "device": args.device,
-
                        "architecture": args.architecture,
                        "dataset": args.dataset,
                        "image_size": args.size,
+                       "model_state": args.model_state,
                        "resnet_architecture": args.resnet_architecture,
                        "resnet_state": args.resnet_state,
                        "series_length": len(args.series),
                        "target": args.target.split('/')[-1],
-
                        "batch_size": args.batch_size,
                        "eval_batches": args.eval_batches,
                        "train_batches": args.train_batches,
-
                        "dimensions": args.dimensions,
                        "dropout": args.dropout,
                        "num_heads": args.num_heads,
-
                        "clip": args.clip,
                        "epochs": args.epochs,
                        "gamma": args.gamma,
                        "lr": args.lr,
                        "phases": args.phases,
-
                        "sequence_limit": args.sequence_limit,
                        "howmuch": args.howmuch,
-
                        "num_workers": args.num_workers,
                    })
     except:
@@ -243,6 +239,12 @@ if __name__ == '__main__':
             args.size,
             args.dimensions,
         ).to(device)
+
+    if args.model_state is not None:
+        log.info(f'Loading state from {args.model_state}')
+        model.load_state_dict(torch.load(args.model_state,
+                                         map_location=torch.device('cpu')),
+                              strict=True)
 
     obj = SpecialLoss().to(device)
 
