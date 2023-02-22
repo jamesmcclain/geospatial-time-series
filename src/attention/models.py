@@ -123,7 +123,7 @@ class AttentionSegmenter(torch.nn.Module):
     def unfreeze_resnet(self):
         unfreeze(self.embed)
 
-    def forward(self, x, pos):
+    def forward(self, x, pos=None):
         # yapf: disable
         bs, ss, cs, xs, ys = x.shape
         x = x.reshape(-1, cs, xs, ys)  # reshape for resnet

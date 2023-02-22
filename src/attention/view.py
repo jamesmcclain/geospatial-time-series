@@ -104,8 +104,7 @@ if __name__ == '__main__':
                 'sparse_ok': True,
                 'tiled': True,
             })
-            out_data = torch.zeros((1, height, width),
-                                   dtype=torch.float32).to(device)
+            out_data = np.zeros((1, height, width), dtype=np.float32)
 
     # Generate list of windows
     windows = []
@@ -125,7 +124,19 @@ if __name__ == '__main__':
 
     # Inference
     with torch.no_grad():
-        pass
+        for batch in tqdm.tqdm(batches):
+            batch_stack = np.stack([np.stack([ds.read(window=window) for ds in in_datasets]) for window in batch]).astype(np.float32)
+            batch_stack = torch.from_numpy(batch_stack).to(dtype=torch.float32, device=device)
+            raw = model(batch_stack)
+            for i, window in enumerate(batch):
+                x = window.col_off
+                y = window.row_off
+                w = window.width
+                h = window.height
+                raw_data[:, y:(y+h), x:(x+w)] += raw[i, :, :, :].detach()
+
+    raw_data = raw_data.softmax(dim=0).cpu().numpy()
+    out_data = np.expand_dims(np.argmax(raw_data, axis=0), axis=0)
 
     # Close r/o datasets
     for dataset in in_datasets:
