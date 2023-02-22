@@ -59,7 +59,7 @@ def cli_parser():
 
     parser.add_argument('--dimensions', required=True, type=int, default=512)
     parser.add_argument('--dropout', required=False, type=float, default=0.10)
-    parser.add_argument('--num-heads', required=False, type=int, default=4)
+    parser.add_argument('--num-heads', required=False, type=int, default=3)
 
     parser.add_argument('--clip', required=False, type=float, default=None)
     parser.add_argument('--epochs', required=False, type=int, default=[13, 7], nargs='+')

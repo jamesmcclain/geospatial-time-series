@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
+import argparse
 import copy
+import logging
+import sys
 
 import numpy as np
 import rasterio as rio
@@ -21,10 +24,9 @@ def cli_parser():
 
     parser.add_argument('--architecture', required=True, type=str, choices=ARCHITECTURES)
     parser.add_argument('--batch-size', required=False, type=int, default=32)
-    parser.add_argument('--batch-size', required=False, type=int, default=4)
-    parser.add_argument('--device', required=False, type=str, default='cuda', choices=['cuda', 'cpu'])
+    parser.add_argument('--device', required=True, type=str, choices=['cuda', 'cpu'])
     parser.add_argument('--model-state', required=True, type=str)
-    parser.add_argument('--num-heads', required=False, type=int, default=4)
+    parser.add_argument('--num-heads', required=False, type=int, default=3)
     parser.add_argument('--output-dir', required=True, type=str)
     parser.add_argument('--resnet-architecture', required=True, type=str, choices=RESNETS)
     parser.add_argument('--series', required=True, type=str, nargs='+')
@@ -75,33 +77,35 @@ if __name__ == '__main__':
     in_datasets = []
     for infile in args.series:
         in_datasets.append(rio.open(infile, 'r'))
-        if out_dataset is None or raw_dataset is None:
-            width = infile.width
-            height = infile.height
+        if out_profile is None or raw_profile is None:
+            width = in_datasets[-1].width
+            height = in_datasets[-1].height
 
-            raw_profile = copy.deepcopy(infile.profile)
+            raw_profile = copy.deepcopy(in_datasets[-1].profile)
             raw_profile.update({
                 'compress': 'lzw',
                 'predictor': 2,
                 'dtype': np.float32,
                 'count': 4,
-                'bigtiff': True,
+                'bigtiff': 'yes',
                 'sparse_ok': True,
                 'tiled': True,
             })
-            raw_data = torch.zeros((4, height, width), dtype=torch.float32).to(device)
+            raw_data = torch.zeros((4, height, width),
+                                   dtype=torch.float32).to(device)
 
-            out_profile = copy.deepcopy(infile.profile)
+            out_profile = copy.deepcopy(in_datasets[-1].profile)
             out_profile.update({
                 'compress': 'lzw',
                 'predictor': 2,
                 'dtype': np.uint8,
                 'count': 1,
-                'bigtiff': True,
+                'bigtiff': 'yes',
                 'sparse_ok': True,
                 'tiled': True,
             })
-            out_data = torch.zeros((4, height, width), dtype=torch.float32).to(device)
+            out_data = torch.zeros((1, height, width),
+                                   dtype=torch.float32).to(device)
 
     # Generate list of windows
     windows = []
@@ -110,7 +114,7 @@ if __name__ == '__main__':
             if i + args.size > width:
                 i = width - args.size
             if j + args.size > height:
-                j = heigh t- args.size
+                j = height - args.size
             windows.append(Window(i, j, args.size, args.size))
 
     # Gather windows into batches
@@ -118,6 +122,10 @@ if __name__ == '__main__':
         windows[i:i + args.batch_size]
         for i in range(0, len(windows), args.batch_size)
     ]
+
+    # Inference
+    with torch.no_grad():
+        pass
 
     # Close r/o datasets
     for dataset in in_datasets:
