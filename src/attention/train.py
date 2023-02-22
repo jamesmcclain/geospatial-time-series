@@ -15,8 +15,7 @@ from PIL import Image
 
 from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
                       RawSeriesDataset)
-from models import (AttentionSegmenter, AttentionSegmenterIn,
-                    AttentionSegmenterOut, EntropyLoss)
+from models import (AttentionSegmenter, EntropyLoss)
 
 ARCHITECTURES = [
     'attention-segmenter',
@@ -218,33 +217,17 @@ if __name__ == '__main__':
             args.dimensions,
             num_heads=args.num_heads,
             dropout=args.dropout,
-        ).to(device)
-    elif args.architecture == 'attention-segmenter-in':
-        assert args.resnet_architecture is not None
-        assert args.resnet_state is not None
-        assert args.dimensions is not None
-        model = AttentionSegmenterIn(
-            args.resnet_architecture,
-            args.resnet_state,
-            args.size,
-            args.dimensions,
-        ).to(device)
-    elif args.architecture == 'attention-segmenter-out':
-        assert args.resnet_architecture is not None
-        assert args.resnet_state is not None
-        assert args.dimensions is not None
-        model = AttentionSegmenterOut(
-            args.resnet_architecture,
-            args.resnet_state,
-            args.size,
-            args.dimensions,
-        ).to(device)
+        )
+    else:
+        pass
 
     if args.model_state is not None:
         log.info(f'Loading state from {args.model_state}')
         model.load_state_dict(torch.load(args.model_state,
                                          map_location=torch.device('cpu')),
                               strict=True)
+
+    model = model.to(device)
 
     obj = SpecialLoss().to(device)
 

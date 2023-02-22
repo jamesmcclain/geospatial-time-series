@@ -157,11 +157,3 @@ class AttentionSegmenter(torch.nn.Module):
         y = self.fpn(tuple(y))  # pass through fpn
         return y
         # yapf: enable
-
-
-class AttentionSegmenterIn(AttentionSegmenter):
-    pass
-
-
-class AttentionSegmenterOut(AttentionSegmenter):
-    pass
