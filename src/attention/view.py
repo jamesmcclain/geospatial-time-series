@@ -26,6 +26,7 @@ def cli_parser():
     parser.add_argument('--batch-size', required=False, type=int, default=32)
     parser.add_argument('--device', required=True, type=str, choices=['cuda', 'cpu'])
     parser.add_argument('--model-state', required=True, type=str)
+    parser.add_argument('--name', required=False, type=str, default=None)
     parser.add_argument('--num-heads', required=False, type=int, default=3)
     parser.add_argument('--output-dir', required=True, type=str)
     parser.add_argument('--resnet-architecture', required=True, type=str, choices=RESNETS)
@@ -70,8 +71,12 @@ if __name__ == '__main__':
 
     raw_profile = None
     out_profile = None
-    raw_outfile = f'{args.output_dir}/raw.tif'
-    out_outfile = f'{args.output_dir}/out.tif'
+    if args.name is not None:
+        raw_outfile = f'{args.output_dir}/{args.name}-raw.tif'
+        out_outfile = f'{args.output_dir}/{args.name}-out.tif'
+    else:
+        raw_outfile = f'{args.output_dir}/raw.tif'
+        out_outfile = f'{args.output_dir}/out.tif'
 
     # Open r/o datasets
     in_datasets = []
@@ -91,6 +96,7 @@ if __name__ == '__main__':
                 'sparse_ok': True,
                 'tiled': True,
             })
+            del raw_profile['nodata']
             raw_data = torch.zeros((4, height, width),
                                    dtype=torch.float32).to(device)
 
@@ -104,6 +110,7 @@ if __name__ == '__main__':
                 'sparse_ok': True,
                 'tiled': True,
             })
+            del out_profile['nodata']
             out_data = np.zeros((1, height, width), dtype=np.float32)
 
     # Generate list of windows
@@ -125,15 +132,19 @@ if __name__ == '__main__':
     # Inference
     with torch.no_grad():
         for batch in tqdm.tqdm(batches):
-            batch_stack = np.stack([np.stack([ds.read(window=window) for ds in in_datasets]) for window in batch]).astype(np.float32)
-            batch_stack = torch.from_numpy(batch_stack).to(dtype=torch.float32, device=device)
+            batch_stack = np.stack([
+                np.stack([ds.read(window=window) for ds in in_datasets])
+                for window in batch
+            ]).astype(np.float32)
+            batch_stack = torch.from_numpy(batch_stack).to(dtype=torch.float32,
+                                                           device=device)
             raw = model(batch_stack)
             for i, window in enumerate(batch):
                 x = window.col_off
                 y = window.row_off
                 w = window.width
                 h = window.height
-                raw_data[:, y:(y+h), x:(x+w)] += raw[i, :, :, :].detach()
+                raw_data[:, y:(y + h), x:(x + w)] += raw[i, :, :, :].detach()
 
     raw_data = raw_data.softmax(dim=0).cpu().numpy()
     out_data = np.expand_dims(np.argmax(raw_data, axis=0), axis=0)
@@ -149,3 +160,10 @@ if __name__ == '__main__':
     log.info(f'Writing {out_outfile} to disk')
     with rio.open(out_outfile, 'w', **out_profile) as ds:
         ds.write(out_data)
+        ds.write_colormap(
+            1, {
+                0: (0xff, 0, 0, 0xff),
+                1: (0, 0xff, 0),
+                2: (0, 0, 0xff),
+                3: (0x16, 0x16, 0x1d)
+            })
