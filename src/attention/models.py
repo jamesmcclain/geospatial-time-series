@@ -71,7 +71,6 @@ class AttentionSegmenter(torch.nn.Module):
                  arch,
                  state,
                  size,
-                 d_model: int = 512,
                  clss: int = 4,
                  num_heads=1,
                  dropout=0.0):
@@ -98,14 +97,15 @@ class AttentionSegmenter(torch.nn.Module):
                                           stride=(1, 1))
 
         self.arch = arch
+        self.size = size
         if self.arch in {'resnet18', 'resnet34'}:
             self.shapes = [
-                [64, 64, 64],
-                [64, 64, 64],
-                [128, 32, 32],
-                [256, 16, 16],
-                [512, 8, 8],
-                [512, 8, 8],
+                [64, size // 4, size // 4],
+                [64, size // 4, size // 4],
+                [128, size // 8, size // 8],
+                [256, size // 16, size // 16],
+                [512, size // 32, size // 32],
+                [512, size // 32, size // 32],
             ]
         else:
             raise Exception(f'Not prepared for {self.arch}')
@@ -123,7 +123,7 @@ class AttentionSegmenter(torch.nn.Module):
     def unfreeze_resnet(self):
         unfreeze(self.embed)
 
-    def forward(self, x, pos):
+    def forward(self, x, pos=None):
         # yapf: disable
         bs, ss, cs, xs, ys = x.shape
         x = x.reshape(-1, cs, xs, ys)  # reshape for resnet
@@ -156,11 +156,3 @@ class AttentionSegmenter(torch.nn.Module):
         y = self.fpn(tuple(y))  # pass through fpn
         return y
         # yapf: enable
-
-
-class AttentionSegmenterIn(AttentionSegmenter):
-    pass
-
-
-class AttentionSegmenterOut(AttentionSegmenter):
-    pass

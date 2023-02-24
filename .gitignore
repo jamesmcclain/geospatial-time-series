@@ -5,3 +5,6 @@ __pycache__/
 *.png
 wandb/
 *.howto
+*.tiff
+*.tif
+*.ovr

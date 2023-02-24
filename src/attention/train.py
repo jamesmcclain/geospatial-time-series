@@ -15,14 +15,9 @@ from PIL import Image
 
 from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
                       RawSeriesDataset)
-from models import (AttentionSegmenter, AttentionSegmenterIn,
-                    AttentionSegmenterOut, EntropyLoss)
+from models import (AttentionSegmenter, EntropyLoss)
 
-ARCHITECTURES = [
-    'attention-segmenter',
-    'attention-segmenter-in',
-    'attention-segmenter-out',
-]
+ARCHITECTURES = ['attention-segmenter']
 DATASETS = ['in-memory-seasonal']
 RESNETS = ['resnet18', 'resnet34']
 
@@ -49,10 +44,11 @@ def cli_parser():
     # Dataset, model type, input, output
     parser.add_argument('--architecture', required=True, type=str, choices=ARCHITECTURES)
     parser.add_argument('--dataset', required=True, type=str, choices=DATASETS)
+    parser.add_argument('--model-state', required=False, type=str, default=None)
     parser.add_argument('--output-dir', required=False, type=str)
-    parser.add_argument('--resnet-architecture', required=False, type=str, choices=RESNETS)
+    parser.add_argument('--resnet-architecture', required=True, type=str, choices=RESNETS)
     parser.add_argument('--resnet-state', required=False, type=str, default=None)
-    parser.add_argument('--series', required=False, type=str, nargs='+')
+    parser.add_argument('--series', required=True, type=str, nargs='+')
     parser.add_argument('--size', required=False, type=int, default=256)
     parser.add_argument('--target', required=False, type=str)
 
@@ -61,9 +57,9 @@ def cli_parser():
     parser.add_argument('--eval-batches', required=False, type=int)
     parser.add_argument('--train-batches', required=False, type=int)
 
-    parser.add_argument('--dimensions', required=False, type=int, default=512)
+    parser.add_argument('--dimensions', required=True, type=int, default=512)
     parser.add_argument('--dropout', required=False, type=float, default=0.10)
-    parser.add_argument('--num-heads', required=False, type=int, default=4)
+    parser.add_argument('--num-heads', required=False, type=int, default=3)
 
     parser.add_argument('--clip', required=False, type=float, default=None)
     parser.add_argument('--epochs', required=False, type=int, default=[13, 7], nargs='+')
@@ -72,6 +68,7 @@ def cli_parser():
     parser.add_argument('--phases', required=False, type=int, default=2)
 
     parser.add_argument('--sequence-limit', required=False, type=int, default=72)
+    parser.add_argument('--howmuch', required=False, type=float, default=1.0)
 
     # Other
     parser.add_argument('--num-workers', required=False, type=int, default=5)
@@ -141,31 +138,27 @@ if __name__ == '__main__':
         wandb.init(project=project,
                    config={
                        "device": args.device,
-
                        "architecture": args.architecture,
                        "dataset": args.dataset,
                        "image_size": args.size,
+                       "model_state": args.model_state,
                        "resnet_architecture": args.resnet_architecture,
                        "resnet_state": args.resnet_state,
                        "series_length": len(args.series),
                        "target": args.target.split('/')[-1],
-
                        "batch_size": args.batch_size,
                        "eval_batches": args.eval_batches,
                        "train_batches": args.train_batches,
-
                        "dimensions": args.dimensions,
                        "dropout": args.dropout,
                        "num_heads": args.num_heads,
-
                        "clip": args.clip,
                        "epochs": args.epochs,
                        "gamma": args.gamma,
                        "lr": args.lr,
                        "phases": args.phases,
-
                        "sequence_limit": args.sequence_limit,
-
+                       "howmuch": args.howmuch,
                        "num_workers": args.num_workers,
                    })
     except:
@@ -190,6 +183,7 @@ if __name__ == '__main__':
                                     size=args.size,
                                     dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
+                                    howmuch=args.howmuch,
                                     evaluation=False),
             **dataloader_cfg,
         )
@@ -199,6 +193,7 @@ if __name__ == '__main__':
                                     size=args.size,
                                     dimensions=args.dimensions,
                                     sequence_limit=args.sequence_limit,
+                                    howmuch=args.howmuch,
                                     evaluation=True),
             **dataloader_cfg,
         )
@@ -209,36 +204,23 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------------
 
     if args.architecture == 'attention-segmenter':
-        assert args.resnet_architecture is not None
-        assert args.dimensions is not None
         model = AttentionSegmenter(
             args.resnet_architecture,
             args.resnet_state,
             args.size,
-            args.dimensions,
             num_heads=args.num_heads,
             dropout=args.dropout,
-        ).to(device)
-    elif args.architecture == 'attention-segmenter-in':
-        assert args.resnet_architecture is not None
-        assert args.resnet_state is not None
-        assert args.dimensions is not None
-        model = AttentionSegmenterIn(
-            args.resnet_architecture,
-            args.resnet_state,
-            args.size,
-            args.dimensions,
-        ).to(device)
-    elif args.architecture == 'attention-segmenter-out':
-        assert args.resnet_architecture is not None
-        assert args.resnet_state is not None
-        assert args.dimensions is not None
-        model = AttentionSegmenterOut(
-            args.resnet_architecture,
-            args.resnet_state,
-            args.size,
-            args.dimensions,
-        ).to(device)
+        )
+    else:
+        pass
+
+    if args.model_state is not None:
+        log.info(f'Loading state from {args.model_state}')
+        model.load_state_dict(torch.load(args.model_state,
+                                         map_location=torch.device('cpu')),
+                              strict=True)
+
+    model = model.to(device)
 
     obj = SpecialLoss().to(device)
 
