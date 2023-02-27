@@ -70,9 +70,6 @@ class CheaplabSegmenter(torch.nn.Module):
     def __init__(self, clss: int = 4, num_heads=1):
         super().__init__()
 
-        self.clss = clss
-        self.num_heads = num_heads
-
         self.cheaplabs = torch.nn.ModuleList([
             torch.hub.load(
                 'jamesmcclain/CheapLab:21a2cd4cfe02ca48c7fdd58f47e121236c09e657',
@@ -84,41 +81,48 @@ class CheaplabSegmenter(torch.nn.Module):
             ) for _ in range(clss)
         ])
 
-        self.attn1 = torch.nn.ModuleList([
-            torch.nn.ModuleList(
-                [torch.nn.Linear(12, 1) for _ in range(num_heads)])
-            for _ in range(clss)
-        ])
-
-        self.attn2 = torch.nn.ModuleList([
-            torch.nn.ModuleList(
-                [torch.nn.Linear(1, 1) for _ in range(num_heads)])
-            for _ in range(clss)
+        self.attn = torch.nn.ModuleList([
+            torch.hub.load(
+                'jamesmcclain/CheapLab:21a2cd4cfe02ca48c7fdd58f47e121236c09e657',
+                'make_cheaplab_model',
+                num_channels=12,
+                out_channels=1,
+                trust_repo=True,
+                skip_validation=True,
+            ) for _ in range(num_heads)
         ])
 
     def freeze_resnet(self):
-        pass
+        freeze(self.cheaplabs)
 
     def unfreeze_resnet(self):
-        pass
+        unfreeze(self.cheaplabs)
 
     def forward(self, x, pos=None):
-        # x2 = x.transpose(-3, -1)  # move channel dimension to the back
+        bs, ss, cs, xs, ys = x.shape
+
+        def compute_weights(x,i):
+            xs2 = max(xs//(4**i), 1)
+            ys2 = max(ys//(4**i), 1)
+            x = x.reshape(-1, cs, xs, ys)
+            x = torch.nn.functional.interpolate(x, mode='bilinear', size=(xs2, ys2))
+            x = self.attn[i](x)
+            x = torch.nn.functional.interpolate(x, size=(xs, ys))
+            x = x.reshape(bs, ss, 1, xs, ys)
+            x = x - torch.mean(x)
+            return x
+
+        weights = [
+            torch.nn.functional.softmax(compute_weights(x, i), dim=1)
+            for i in range(len(self.attn))
+        ]
+
         y = []
-        for i, cheaplab in enumerate(self.cheaplabs):
-            bs, ss, cs, xs, ys = x.shape
+        for cheaplab in self.cheaplabs:
             yi = cheaplab(x.reshape(-1, cs, xs, ys)).reshape(bs, ss, 1, xs, ys)
-            yi = yi.transpose(-3, -1)  # move result dimension to back
-            # yi = torch.stack([(torch.nn.functional.softmax(self.attn1[i][j](x2), dim=1) + torch.nn.functional.softmax(self.attn2[i][j](yi), dim=1)) * yi for j in range(self.num_heads)], dim=1)
             # yapf: disable
-            yi = torch.stack([
-                (torch.nn.functional.softmax(self.attn2[i][j](yi), dim=1)) * yi
-                for j in range(self.num_heads)
-            ],dim=1)
+            yi = torch.sum(torch.stack([(wj * yi) for wj in weights], dim=1), dim=(1, 2))  # weighted combination
             # yapf: enable
-            yi = torch.sum(yi, dim=(1, 2))  # weighted combination
-            yi = yi.transpose(
-                -3, -1)  # restore result dimension to original location
             y.append(yi)
         y = torch.cat(y, dim=1)
         y = torch.nn.functional.normalize(y, p=1.0, dim=1)

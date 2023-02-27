@@ -125,7 +125,7 @@ if __name__ == '__main__':
     log.info(args.__dict__)
 
     assert args.phases >= len(args.epochs)
-    assert args.phases >= len(args.gamma)
+    # assert args.phases >= len(args.gamma)
 
     device = torch.device(args.device)
 
