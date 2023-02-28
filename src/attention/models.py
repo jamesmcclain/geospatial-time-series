@@ -65,6 +65,73 @@ class EntropyLoss(torch.nn.Module):
 # ------------------------------------------------------------------------
 
 
+class CheaplabSegmenter(torch.nn.Module):
+
+    def __init__(self, clss: int = 4, num_heads=1):
+        super().__init__()
+
+        self.cheaplabs = torch.nn.ModuleList([
+            torch.hub.load(
+                'jamesmcclain/CheapLab:21a2cd4cfe02ca48c7fdd58f47e121236c09e657',
+                'make_cheaplab_model',
+                num_channels=12,
+                out_channels=1,
+                trust_repo=True,
+                skip_validation=True,
+            ) for _ in range(clss)
+        ])
+
+        self.attn = torch.nn.ModuleList([
+            torch.hub.load(
+                'jamesmcclain/CheapLab:21a2cd4cfe02ca48c7fdd58f47e121236c09e657',
+                'make_cheaplab_model',
+                num_channels=12,
+                out_channels=1,
+                trust_repo=True,
+                skip_validation=True,
+            ) for _ in range(num_heads)
+        ])
+
+    def freeze_resnet(self):
+        freeze(self.cheaplabs)
+
+    def unfreeze_resnet(self):
+        unfreeze(self.cheaplabs)
+
+    def forward(self, x, pos=None):
+        bs, ss, cs, xs, ys = x.shape
+
+        def compute_weights(x,i):
+            xs2 = max(xs//(4**i), 1)
+            ys2 = max(ys//(4**i), 1)
+            x = x.reshape(-1, cs, xs, ys)
+            x = torch.nn.functional.interpolate(x, mode='bilinear', size=(xs2, ys2))
+            x = self.attn[i](x)
+            x = torch.nn.functional.interpolate(x, size=(xs, ys))
+            x = x.reshape(bs, ss, 1, xs, ys)
+            x = x - torch.mean(x)
+            return x
+
+        weights = [
+            torch.nn.functional.softmax(compute_weights(x, i), dim=1)
+            for i in range(len(self.attn))
+        ]
+
+        y = []
+        for cheaplab in self.cheaplabs:
+            yi = cheaplab(x.reshape(-1, cs, xs, ys)).reshape(bs, ss, 1, xs, ys)
+            # yapf: disable
+            yi = torch.sum(torch.stack([(wj * yi) for wj in weights], dim=1), dim=(1, 2))  # weighted combination
+            # yapf: enable
+            y.append(yi)
+        y = torch.cat(y, dim=1)
+        y = torch.nn.functional.normalize(y, p=1.0, dim=1)
+        return y
+
+
+# ------------------------------------------------------------------------
+
+
 class AttentionSegmenter(torch.nn.Module):
 
     def __init__(self,
@@ -72,8 +139,8 @@ class AttentionSegmenter(torch.nn.Module):
                  state,
                  size,
                  clss: int = 4,
-                 num_heads=1,
-                 dropout=0.0):
+                 num_heads: int = 1,
+                 dropout: float = 0.0):
         super().__init__()
 
         self.resnet = torch.hub.load(
@@ -84,7 +151,10 @@ class AttentionSegmenter(torch.nn.Module):
             num_classes=6,
             fpn_channels=256,
             in_channels=12,
-            out_size=(size, size))
+            out_size=(size, size),
+            trust_repo=True,
+            skip_validation=True,
+        )
         if state is not None:
             self.resnet.load_state_dict(torch.load(
                 state, map_location=torch.device('cpu')),
@@ -140,18 +210,15 @@ class AttentionSegmenter(torch.nn.Module):
         for i in range(len(x)):
             shape = self.shapes[i]
             xi = x[i]
-            xi = xi.reshape(bs, ss,
-                            *shape)  # Restore "original" shape post resnet
-            xi = xi.transpose(2, 4)  # move embeddings to end
+            xi = xi.reshape(bs, ss, *shape)  # Restore "original" shape post resnet
+            xi = xi.transpose(-3, -1)  # move embeddings to end
             xi = torch.stack([
-                torch.nn.functional.softmax(head(xi), dim=4) * xi
+                torch.nn.functional.softmax(head(xi), dim=-1) * xi
                 for head in self.attn[i]
-            ],
-                             dim=1)  # apply attention
+            ], dim=1)  # apply attention
             xi = torch.sum(xi, dim=(1, 2))  # weighted combination
-            y[i] = torch.nn.functional.normalize(xi.transpose(1, 3),
-                                                 p=1.0,
-                                                 dim=1)  # move embeddings back
+            xi = xi.transpose(-3, -1)  # restore embeddings to original dimension
+            y[i] = torch.nn.functional.normalize(xi, p=1.0, dim=1)  # normalize
 
         y = self.fpn(tuple(y))  # pass through fpn
         return y

@@ -13,11 +13,10 @@ import torchvision as tv
 import tqdm
 from PIL import Image
 
-from datasets import (InMemorySeasonalDataset, NpzSeriesDataset,
-                      RawSeriesDataset)
-from models import (AttentionSegmenter, EntropyLoss)
+from datasets import InMemorySeasonalDataset
+from models import AttentionSegmenter, CheaplabSegmenter, EntropyLoss
 
-ARCHITECTURES = ['attention-segmenter']
+ARCHITECTURES = ['attention-segmenter', 'cheaplab-segmenter']
 DATASETS = ['in-memory-seasonal']
 RESNETS = ['resnet18', 'resnet34']
 
@@ -46,7 +45,7 @@ def cli_parser():
     parser.add_argument('--dataset', required=True, type=str, choices=DATASETS)
     parser.add_argument('--model-state', required=False, type=str, default=None)
     parser.add_argument('--output-dir', required=False, type=str)
-    parser.add_argument('--resnet-architecture', required=True, type=str, choices=RESNETS)
+    parser.add_argument('--resnet-architecture', required=False, type=str, choices=RESNETS)
     parser.add_argument('--resnet-state', required=False, type=str, default=None)
     parser.add_argument('--series', required=True, type=str, nargs='+')
     parser.add_argument('--size', required=False, type=int, default=256)
@@ -57,7 +56,7 @@ def cli_parser():
     parser.add_argument('--eval-batches', required=False, type=int)
     parser.add_argument('--train-batches', required=False, type=int)
 
-    parser.add_argument('--dimensions', required=True, type=int, default=512)
+    parser.add_argument('--dimensions', required=False, type=int, default=512)
     parser.add_argument('--dropout', required=False, type=float, default=0.10)
     parser.add_argument('--num-heads', required=False, type=int, default=3)
 
@@ -126,7 +125,7 @@ if __name__ == '__main__':
     log.info(args.__dict__)
 
     assert args.phases >= len(args.epochs)
-    assert args.phases >= len(args.gamma)
+    # assert args.phases >= len(args.gamma)
 
     device = torch.device(args.device)
 
@@ -204,6 +203,7 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------------
 
     if args.architecture == 'attention-segmenter':
+        assert args.resnet_architecture is not None
         model = AttentionSegmenter(
             args.resnet_architecture,
             args.resnet_state,
@@ -211,6 +211,8 @@ if __name__ == '__main__':
             num_heads=args.num_heads,
             dropout=args.dropout,
         )
+    elif args.architecture == 'cheaplab-segmenter':
+        model = CheaplabSegmenter(num_heads=args.num_heads, )
     else:
         pass
 

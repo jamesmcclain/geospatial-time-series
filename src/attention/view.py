@@ -11,9 +11,9 @@ import torch
 import tqdm
 from rasterio.windows import Window
 
-from models import AttentionSegmenter
+from models import AttentionSegmenter, CheaplabSegmenter
 
-ARCHITECTURES = ['attention-segmenter']
+ARCHITECTURES = ['attention-segmenter', 'cheaplab-segmenter']
 DATASETS = ['in-memory-seasonal']
 RESNETS = ['resnet18', 'resnet34']
 
@@ -29,7 +29,7 @@ def cli_parser():
     parser.add_argument('--name', required=False, type=str, default=None)
     parser.add_argument('--num-heads', required=False, type=int, default=3)
     parser.add_argument('--output-dir', required=True, type=str)
-    parser.add_argument('--resnet-architecture', required=True, type=str, choices=RESNETS)
+    parser.add_argument('--resnet-architecture', required=False, type=str, choices=RESNETS)
     parser.add_argument('--series', required=True, type=str, nargs='+')
     parser.add_argument('--size', required=False, type=int, default=256)
     parser.add_argument('--stride', required=False, type=int, default=107)
@@ -51,12 +51,15 @@ if __name__ == '__main__':
     device = torch.device(args.device)
 
     if args.architecture == 'attention-segmenter':
+        assert args.resnet_architecture is not None
         model = AttentionSegmenter(
             args.resnet_architecture,
             None,
             args.size,
             num_heads=args.num_heads,
         )
+    elif args.architecture == 'cheaplab-segmenter':
+        model = CheaplabSegmenter(num_heads=args.num_heads, )
     else:
         pass
 
