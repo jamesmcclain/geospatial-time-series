@@ -101,11 +101,13 @@ class CheaplabSegmenter(torch.nn.Module):
     def forward(self, x, pos=None):
         bs, ss, cs, xs, ys = x.shape
 
-        def compute_weights(x,i):
-            xs2 = max(xs//(4**i), 1)
-            ys2 = max(ys//(4**i), 1)
+        def compute_weights(x, i):
+            xs2 = max(xs // (4**i), 1)
+            ys2 = max(ys // (4**i), 1)
             x = x.reshape(-1, cs, xs, ys)
-            x = torch.nn.functional.interpolate(x, mode='bilinear', size=(xs2, ys2))
+            x = torch.nn.functional.interpolate(x,
+                                                mode='bilinear',
+                                                size=(xs2, ys2))
             x = self.attn[i](x)
             x = torch.nn.functional.interpolate(x, size=(xs, ys))
             x = x.reshape(bs, ss, 1, xs, ys)
