@@ -11,9 +11,11 @@ import torch
 import tqdm
 from rasterio.windows import Window
 
-from models import AttentionSegmenter, CheaplabSegmenter
+from models import AttentionSegmenter, CheaplabLiteSegmenter, CheaplabSegmenter
 
-ARCHITECTURES = ['attention-segmenter', 'cheaplab-segmenter']
+ARCHITECTURES = [
+    'attention-segmenter', 'cheaplab-segmenter', 'cheaplab-lite-segmenter'
+]
 DATASETS = ['in-memory-seasonal']
 RESNETS = ['resnet18', 'resnet34']
 
@@ -29,6 +31,7 @@ def cli_parser():
     parser.add_argument('--name', required=False, type=str, default=None)
     parser.add_argument('--num-heads', required=False, type=int, default=3)
     parser.add_argument('--output-dir', required=True, type=str)
+    parser.add_argument('--preshrink', required=False, type=int, default=1)
     parser.add_argument('--resnet-architecture', required=False, type=str, choices=RESNETS)
     parser.add_argument('--series', required=True, type=str, nargs='+')
     parser.add_argument('--size', required=False, type=int, default=256)
@@ -59,7 +62,11 @@ if __name__ == '__main__':
             num_heads=args.num_heads,
         )
     elif args.architecture == 'cheaplab-segmenter':
-        model = CheaplabSegmenter(num_heads=args.num_heads, )
+        model = CheaplabSegmenter(num_heads=args.num_heads,
+                                  preshrink=args.preshrink)
+    elif args.architecture == 'cheaplab-lite-segmenter':
+        model = CheaplabSegmenter(num_heads=args.num_heads,
+                                  preshrink=args.preshrink)
     else:
         pass
 
