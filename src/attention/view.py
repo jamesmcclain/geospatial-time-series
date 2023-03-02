@@ -26,6 +26,7 @@ def cli_parser():
 
     parser.add_argument('--architecture', required=True, type=str, choices=ARCHITECTURES)
     parser.add_argument('--batch-size', required=False, type=int, default=32)
+    parser.add_argument('--cmyk', dest='cmyk', default=False, action='store_true')
     parser.add_argument('--device', required=True, type=str, choices=['cuda', 'cpu'])
     parser.add_argument('--model-state', required=True, type=str)
     parser.add_argument('--name', required=False, type=str, default=None)
@@ -108,7 +109,7 @@ if __name__ == '__main__':
                 'compress': 'lzw',
                 'predictor': 2,
                 'dtype': np.float32,
-                'count': 4,
+                'count': 4 if not args.cmyk else 3,
                 'bigtiff': 'yes',
                 'sparse_ok': True,
                 'tiled': True,
@@ -213,17 +214,33 @@ if __name__ == '__main__':
     if args.prediction:
         log.info(f'Writing {raw_outfile} to disk')
         with rio.open(raw_outfile, 'w', **raw_profile) as ds:
+            if args.cmyk:
+                raw_data_old = 1.0 - raw_data
+                raw_data = np.zeros((3, height, width), dtype=np.float32)
+                raw_data[0] = raw_data_old[0] * raw_data_old[3]
+                raw_data[1] = raw_data_old[1] * raw_data_old[3]
+                raw_data[2] = raw_data_old[2] * raw_data_old[3]
+                del raw_data_old
             ds.write(raw_data)
         log.info(f'Writing {out_outfile} to disk')
         with rio.open(out_outfile, 'w', **out_profile) as ds:
+            if args.cmyk:
+                ds.write_colormap(
+                    1, {
+                        0: (0x00, 0xAE, 0xEF),
+                        1: (0xEC, 0x00, 0x8C),
+                        2: (0xFF, 0xEF, 0x00),
+                        3: (0x00, 0x00, 0x00)
+                    })
+            else:
+                ds.write_colormap(
+                    1, {
+                        0: (0xFF, 0x00, 0x00),
+                        1: (0x00, 0xFF, 0x00),
+                        2: (0x00, 0x00, 0xFF),
+                        3: (0x16, 0x16, 0x1D)
+                    })
             ds.write(out_data)
-            ds.write_colormap(
-                1, {
-                    0: (0x00, 0xAE, 0xEF),
-                    1: (0xEC, 0x00, 0x8C),
-                    2: (0xFF, 0xEF, 0x00),
-                    3: (0x00, 0x00, 0x00)
-                })
 
     if args.salience:
         log.info(f'Writing {sal_outfile} to disk')
