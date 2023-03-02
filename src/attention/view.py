@@ -135,13 +135,13 @@ if __name__ == '__main__':
                 'compress': 'lzw',
                 'predictor': 2,
                 'dtype': np.float32,
-                'count': 3,
+                'count': 12,
                 'bigtiff': 'yes',
                 'sparse_ok': True,
                 'tiled': True,
             })
             del sal_profile['nodata']
-            sal_data = np.zeros((3, height, width), dtype=np.float32)
+            sal_data = np.zeros((12, height, width), dtype=np.float32)
 
     # Generate list of windows
     windows = []
@@ -198,7 +198,7 @@ if __name__ == '__main__':
             score, _ = torch.max(raw, dim=-3)
             torch.sum(score).backward()
             sal = batch_stack * batch_stack.grad.abs()
-            sal = torch.sum(sal[:, :, [4, 3, 2], :, :], dim=1)
+            sal = torch.sum(sal[:, :, :, :, :], dim=1)
             for i, window in enumerate(batch):
                 x = window.col_off
                 y = window.row_off
@@ -215,11 +215,13 @@ if __name__ == '__main__':
         log.info(f'Writing {raw_outfile} to disk')
         with rio.open(raw_outfile, 'w', **raw_profile) as ds:
             if args.cmyk:
-                raw_data_old = 1.0 - raw_data
+                raw_data_old = raw_data
                 raw_data = np.zeros((3, height, width), dtype=np.float32)
-                raw_data[0] = raw_data_old[0] * raw_data_old[3]
-                raw_data[1] = raw_data_old[1] * raw_data_old[3]
-                raw_data[2] = raw_data_old[2] * raw_data_old[3]
+                # yapf: disable
+                raw_data[0] = ((raw_data_old[1] * 0.925490196) + (raw_data_old[2] * 1.0)) * (1.0 - raw_data_old[3])
+                raw_data[1] = ((raw_data_old[0] * 0.682352941) + (raw_data_old[2] * 0.937254902)) * (1.0 - raw_data_old[3])
+                raw_data[2] = ((raw_data_old[0] * 0.937254902) + (raw_data_old[1] * 0.549019608)) * (1.0 - raw_data_old[3])
+                # yapf: enable
                 del raw_data_old
             ds.write(raw_data)
         log.info(f'Writing {out_outfile} to disk')
