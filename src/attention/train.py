@@ -14,9 +14,12 @@ import tqdm
 from PIL import Image
 
 from datasets import InMemorySeasonalDataset
-from models import AttentionSegmenter, CheaplabSegmenter, EntropyLoss
+from models import (AttentionSegmenter, CheaplabLiteSegmenter,
+                    CheaplabSegmenter, EntropyLoss)
 
-ARCHITECTURES = ['attention-segmenter', 'cheaplab-segmenter']
+ARCHITECTURES = [
+    'attention-segmenter', 'cheaplab-segmenter', 'cheaplab-lite-segmenter'
+]
 DATASETS = ['in-memory-seasonal']
 RESNETS = ['resnet18', 'resnet34']
 
@@ -45,6 +48,7 @@ def cli_parser():
     parser.add_argument('--dataset', required=True, type=str, choices=DATASETS)
     parser.add_argument('--model-state', required=False, type=str, default=None)
     parser.add_argument('--output-dir', required=False, type=str)
+    parser.add_argument('--preshrink', required=False, type=int, default=1)
     parser.add_argument('--resnet-architecture', required=False, type=str, choices=RESNETS)
     parser.add_argument('--resnet-state', required=False, type=str, default=None)
     parser.add_argument('--series', required=True, type=str, nargs='+')
@@ -141,6 +145,7 @@ if __name__ == '__main__':
                        "dataset": args.dataset,
                        "image_size": args.size,
                        "model_state": args.model_state,
+                       "preshrink": args.preshrink,
                        "resnet_architecture": args.resnet_architecture,
                        "resnet_state": args.resnet_state,
                        "series_length": len(args.series),
@@ -212,7 +217,11 @@ if __name__ == '__main__':
             dropout=args.dropout,
         )
     elif args.architecture == 'cheaplab-segmenter':
-        model = CheaplabSegmenter(num_heads=args.num_heads, )
+        model = CheaplabSegmenter(num_heads=args.num_heads,
+                                  preshrink=args.preshrink)
+    elif args.architecture == 'cheaplab-lite-segmenter':
+        model = CheaplabLiteSegmenter(num_heads=args.num_heads,
+                                      preshrink=args.preshrink)
     else:
         pass
 

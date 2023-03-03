@@ -65,32 +65,71 @@ class EntropyLoss(torch.nn.Module):
 # ------------------------------------------------------------------------
 
 
-class CheaplabSegmenter(torch.nn.Module):
+class CheaplabLiteSegmenter(torch.nn.Module):
 
-    def __init__(self, clss: int = 4, num_heads=1):
+    def __init__(self, clss: int = 4, num_heads=1, preshrink=1):
         super().__init__()
 
+        self.clss = clss
+        self.num_heads = num_heads
+        self.cheaplab = torch.hub.load(
+            'jamesmcclain/CheapLab:21a2cd4cfe02ca48c7fdd58f47e121236c09e657',
+            'make_cheaplab_model',
+            num_channels=12,
+            out_channels=4,
+            preshrink=preshrink,
+            trust_repo=True,
+            skip_validation=True,
+        )
+        self.attn = torch.nn.ModuleList(
+            [torch.nn.Linear(clss, 1) for _ in range(num_heads)])
+
+    def freeze_resnet(self):
+        freeze(self.cheaplab)
+
+    def unfreeze_resnet(self):
+        unfreeze(self.cheaplab)
+
+    def forward(self, x, pos=None):
+        bs, ss, cs, xs, ys = x.shape
+
+        # yapf: disable
+        y = self.cheaplab(x.reshape(-1, cs, xs, ys)).reshape(bs, ss, self.clss, xs, ys)
+        y = y.transpose(-3, -1)  # Move class dimension to back
+        w = torch.stack([
+            torch.nn.functional.softmax(attn(y), dim=-1) for attn in self.attn
+        ], dim=1)
+        y = w * y.reshape(bs, 1, ss, xs, ys, -1)  # Apply weights and ...
+        y = torch.sum(y, dim=(1, 2))  # ... collapse dimensions
+        y = y.transpose(-3, -1)  # Restore class dimension
+        y = torch.nn.functional.normalize(y, p=1.0, dim=-3)
+        # yapf: enable
+        return y
+
+
+# ------------------------------------------------------------------------
+
+
+class CheaplabSegmenter(torch.nn.Module):
+
+    def __init__(self, clss: int = 4, num_heads=1, preshrink=1):
+        super().__init__()
+
+        self.clss = clss
+        self.num_heads = num_heads
         self.cheaplabs = torch.nn.ModuleList([
             torch.hub.load(
                 'jamesmcclain/CheapLab:21a2cd4cfe02ca48c7fdd58f47e121236c09e657',
                 'make_cheaplab_model',
                 num_channels=12,
                 out_channels=1,
+                preshrink=preshrink,
                 trust_repo=True,
                 skip_validation=True,
             ) for _ in range(clss)
         ])
-
-        self.attn = torch.nn.ModuleList([
-            torch.hub.load(
-                'jamesmcclain/CheapLab:21a2cd4cfe02ca48c7fdd58f47e121236c09e657',
-                'make_cheaplab_model',
-                num_channels=12,
-                out_channels=1,
-                trust_repo=True,
-                skip_validation=True,
-            ) for _ in range(num_heads)
-        ])
+        self.attn = torch.nn.ModuleList(
+            [torch.nn.Linear(clss, 1) for _ in range(num_heads)])
 
     def freeze_resnet(self):
         freeze(self.cheaplabs)
@@ -101,31 +140,20 @@ class CheaplabSegmenter(torch.nn.Module):
     def forward(self, x, pos=None):
         bs, ss, cs, xs, ys = x.shape
 
-        def compute_weights(x,i):
-            xs2 = max(xs//(4**i), 1)
-            ys2 = max(ys//(4**i), 1)
-            x = x.reshape(-1, cs, xs, ys)
-            x = torch.nn.functional.interpolate(x, mode='bilinear', size=(xs2, ys2))
-            x = self.attn[i](x)
-            x = torch.nn.functional.interpolate(x, size=(xs, ys))
-            x = x.reshape(bs, ss, 1, xs, ys)
-            x = x - torch.mean(x)
-            return x
-
-        weights = [
-            torch.nn.functional.softmax(compute_weights(x, i), dim=1)
-            for i in range(len(self.attn))
-        ]
-
-        y = []
-        for cheaplab in self.cheaplabs:
-            yi = cheaplab(x.reshape(-1, cs, xs, ys)).reshape(bs, ss, 1, xs, ys)
-            # yapf: disable
-            yi = torch.sum(torch.stack([(wj * yi) for wj in weights], dim=1), dim=(1, 2))  # weighted combination
-            # yapf: enable
-            y.append(yi)
-        y = torch.cat(y, dim=1)
-        y = torch.nn.functional.normalize(y, p=1.0, dim=1)
+        # yapf: disable
+        y = torch.cat([
+            cheaplab(x.reshape(-1, cs, xs, ys)).reshape(bs, ss, 1, xs, ys)
+            for cheaplab in self.cheaplabs
+        ], dim=-3)
+        y = y.transpose(-3, -1)  # Move class dimension to back
+        w = torch.stack([
+            torch.nn.functional.softmax(attn(y), dim=-1) for attn in self.attn
+        ], dim=1)
+        y = w * y.reshape(bs, 1, ss, xs, ys, -1)  # Apply weights and ...
+        y = torch.sum(y, dim=(1, 2))  # ... collapse dimensions
+        y = y.transpose(-3, -1)  # Restore class dimension
+        y = torch.nn.functional.normalize(y, p=1.0, dim=-3)
+        # yapf: enable
         return y
 
 
