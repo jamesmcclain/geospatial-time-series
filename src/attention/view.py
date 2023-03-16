@@ -70,7 +70,7 @@ if __name__ == '__main__':
                                   preshrink=args.preshrink)
     elif args.architecture == 'cheaplab-lite-segmenter':
         model = CheaplabLiteSegmenter(num_heads=args.num_heads,
-                                  preshrink=args.preshrink)
+                                      preshrink=args.preshrink)
     else:
         pass
 
@@ -128,9 +128,11 @@ if __name__ == '__main__':
                 raw_profile['count'] = args.num_heads
 
             if not args.attention:
-                raw_data = torch.zeros((4, height, width), dtype=torch.float32).to(device)
+                raw_data = torch.zeros((4, height, width),
+                                       dtype=torch.float32).to(device)
             else:
-                raw_data = torch.zeros((args.num_heads, height, width), dtype=torch.float32).to(device)
+                raw_data = torch.zeros((args.num_heads, height, width),
+                                       dtype=torch.float32).to(device)
 
             out_profile = copy.deepcopy(in_datasets[-1].profile)
             out_profile.update({
@@ -209,8 +211,8 @@ if __name__ == '__main__':
                 np.stack([ds.read(window=window) for ds in in_datasets])
                 for window in batch
             ]).astype(np.float32)
-            batch_stack = torch.from_numpy(batch_stack).to(
-                dtype=torch.float32, device=device)
+            batch_stack = torch.from_numpy(batch_stack).to(dtype=torch.float32,
+                                                           device=device)
             batch_stack.requires_grad = True
             raw = model(batch_stack)
             score, _ = torch.max(raw, dim=-3)

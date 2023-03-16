@@ -90,7 +90,7 @@ class CheaplabLiteSegmenter(torch.nn.Module):
     def unfreeze_resnet(self):
         unfreeze(self.cheaplab)
 
-    def forward(self, x, pos=None, attn_weights:bool=False):
+    def forward(self, x, pos=None, attn_weights: bool = False):
         bs, ss, cs, xs, ys = x.shape
 
         # yapf: disable
@@ -144,7 +144,7 @@ class CheaplabSegmenter(torch.nn.Module):
     def unfreeze_resnet(self):
         unfreeze(self.cheaplabs)
 
-    def forward(self, x, pos=None, attn_weights:bool=False):
+    def forward(self, x, pos=None, attn_weights: bool = False):
         bs, ss, cs, xs, ys = x.shape
 
         # yapf: disable
