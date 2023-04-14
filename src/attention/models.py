@@ -90,12 +90,19 @@ class CheaplabLiteSegmenter(torch.nn.Module):
     def unfreeze_resnet(self):
         unfreeze(self.cheaplab)
 
-    def forward(self, x, pos=None):
+    def forward(self, x, pos=None, attn_weights: bool = False):
         bs, ss, cs, xs, ys = x.shape
 
         # yapf: disable
         y = self.cheaplab(x.reshape(-1, cs, xs, ys)).reshape(bs, ss, self.clss, xs, ys)
         y = y.transpose(-3, -1)  # Move class dimension to back
+        if attn_weights is True:
+            assert (ss == 1)
+            w = torch.stack([
+                attn(y) for attn in self.attn
+            ], dim=1)
+            w = w.transpose(-3, -1)
+            return w.reshape(bs, len(self.attn), xs, ys)
         w = torch.stack([
             torch.nn.functional.softmax(attn(y), dim=-1) for attn in self.attn
         ], dim=1)
@@ -137,7 +144,7 @@ class CheaplabSegmenter(torch.nn.Module):
     def unfreeze_resnet(self):
         unfreeze(self.cheaplabs)
 
-    def forward(self, x, pos=None):
+    def forward(self, x, pos=None, attn_weights: bool = False):
         bs, ss, cs, xs, ys = x.shape
 
         # yapf: disable
@@ -146,6 +153,13 @@ class CheaplabSegmenter(torch.nn.Module):
             for cheaplab in self.cheaplabs
         ], dim=-3)
         y = y.transpose(-3, -1)  # Move class dimension to back
+        if attn_weights is True:
+            assert (ss == 1)
+            w = torch.stack([
+                attn(y) for attn in self.attn
+            ], dim=1)
+            w = w.transpose(-3, -1)
+            return w.reshape(bs, len(self.attn), xs, ys)
         w = torch.stack([
             torch.nn.functional.softmax(attn(y), dim=-1) for attn in self.attn
         ], dim=1)
@@ -241,8 +255,8 @@ class AttentionSegmenter(torch.nn.Module):
             xi = xi.reshape(bs, ss, *shape)  # Restore "original" shape post resnet
             xi = xi.transpose(-3, -1)  # move embeddings to end
             xi = torch.stack([
-                torch.nn.functional.softmax(head(xi), dim=-1) * xi
-                for head in self.attn[i]
+                torch.nn.functional.softmax(attn(xi), dim=-1) * xi
+                for attn in self.attn[i]
             ], dim=1)  # apply attention
             xi = torch.sum(xi, dim=(1, 2))  # weighted combination
             xi = xi.transpose(-3, -1)  # restore embeddings to original dimension

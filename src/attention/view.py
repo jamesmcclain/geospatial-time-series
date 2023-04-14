@@ -25,6 +25,7 @@ def cli_parser():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--architecture', required=True, type=str, choices=ARCHITECTURES)
+    parser.add_argument('--attention', dest='attention', default=False, action='store_true')
     parser.add_argument('--batch-size', required=False, type=int, default=32)
     parser.add_argument('--cmyk', dest='cmyk', default=False, action='store_true')
     parser.add_argument('--device', required=True, type=str, choices=['cuda', 'cpu'])
@@ -69,7 +70,7 @@ if __name__ == '__main__':
                                   preshrink=args.preshrink)
     elif args.architecture == 'cheaplab-lite-segmenter':
         model = CheaplabLiteSegmenter(num_heads=args.num_heads,
-                                  preshrink=args.preshrink)
+                                      preshrink=args.preshrink)
     else:
         pass
 
@@ -81,9 +82,15 @@ if __name__ == '__main__':
     model = model.to(device)
     model.eval()
 
+    # Ensure compatible command line arguments
     if args.salience:
         assert args.size % args.stride == 0
+    if args.attention:
+        assert args.prediction is not True
+        assert args.cmyk is not True
+        assert len(args.series) == 1
 
+    # Profiles and file names
     raw_profile = None
     out_profile = None
     sal_profile = None
@@ -109,14 +116,23 @@ if __name__ == '__main__':
                 'compress': 'lzw',
                 'predictor': 2,
                 'dtype': np.float32,
-                'count': 4 if not args.cmyk else 3,
                 'bigtiff': 'yes',
                 'sparse_ok': True,
                 'tiled': True,
             })
             del raw_profile['nodata']
-            raw_data = torch.zeros((4, height, width),
-                                   dtype=torch.float32).to(device)
+
+            if args.attention is not True:
+                raw_profile['count'] = 4 if not args.cmyk else 3
+            elif args.attention:
+                raw_profile['count'] = args.num_heads
+
+            if not args.attention:
+                raw_data = torch.zeros((4, height, width),
+                                       dtype=torch.float32).to(device)
+            else:
+                raw_data = torch.zeros((args.num_heads, height, width),
+                                       dtype=torch.float32).to(device)
 
             out_profile = copy.deepcopy(in_datasets[-1].profile)
             out_profile.update({
@@ -141,7 +157,8 @@ if __name__ == '__main__':
                 'tiled': True,
             })
             del sal_profile['nodata']
-            sal_data = np.zeros((12, height, width), dtype=np.float32)
+            if args.salience:
+                sal_data = np.zeros((12, height, width), dtype=np.float32)
 
     # Generate list of windows
     windows = []
@@ -159,8 +176,8 @@ if __name__ == '__main__':
         for i in range(0, len(windows), args.batch_size)
     ]
 
-    # Inference
-    if args.prediction:
+    # Inference or attention
+    if args.prediction is True or args.attention is True:
         with torch.no_grad():
             for batch in tqdm.tqdm(batches):
                 batch_stack = np.stack([
@@ -169,7 +186,7 @@ if __name__ == '__main__':
                 ]).astype(np.float32)
                 batch_stack = torch.from_numpy(batch_stack).to(
                     dtype=torch.float32, device=device)
-                raw = model(batch_stack)
+                raw = model(batch_stack, attn_weights=args.attention)
                 for i, window in enumerate(batch):
                     x = window.col_off
                     y = window.row_off
@@ -177,12 +194,15 @@ if __name__ == '__main__':
                     h = window.height
                     raw_data[:, y:(y + h), x:(x + w)] += raw[i, :, :, :].detach()
 
+    # Process inference or attention data
     if args.prediction:
         raw_data = raw_data.softmax(dim=0).cpu().numpy()
         out_data = np.expand_dims(np.argmax(raw_data, axis=0), axis=0)
+    elif args.attention:
+        raw_data = raw_data.softmax(dim=0).cpu().numpy()
 
     # Salience
-    if args.salience:
+    if args.salience is True:
         for param in model.parameters():
             param.requires_grad = False
 
@@ -191,8 +211,8 @@ if __name__ == '__main__':
                 np.stack([ds.read(window=window) for ds in in_datasets])
                 for window in batch
             ]).astype(np.float32)
-            batch_stack = torch.from_numpy(batch_stack).to(
-                dtype=torch.float32, device=device)
+            batch_stack = torch.from_numpy(batch_stack).to(dtype=torch.float32,
+                                                           device=device)
             batch_stack.requires_grad = True
             raw = model(batch_stack)
             score, _ = torch.max(raw, dim=-3)
@@ -210,8 +230,8 @@ if __name__ == '__main__':
     for dataset in in_datasets:
         dataset.close()
 
-    # Output results
-    if args.prediction:
+    # Output prediction or attention results
+    if args.prediction is True or args.attention is True:
         log.info(f'Writing {raw_outfile} to disk')
         with rio.open(raw_outfile, 'w', **raw_profile) as ds:
             if args.cmyk:
@@ -224,26 +244,28 @@ if __name__ == '__main__':
                 # yapf: enable
                 del raw_data_old
             ds.write(raw_data)
-        log.info(f'Writing {out_outfile} to disk')
-        with rio.open(out_outfile, 'w', **out_profile) as ds:
-            if args.cmyk:
-                ds.write_colormap(
-                    1, {
-                        0: (0x00, 0xAE, 0xEF),
-                        1: (0xEC, 0x00, 0x8C),
-                        2: (0xFF, 0xEF, 0x00),
-                        3: (0x00, 0x00, 0x00)
-                    })
-            else:
-                ds.write_colormap(
-                    1, {
-                        0: (0xFF, 0x00, 0x00),
-                        1: (0x00, 0xFF, 0x00),
-                        2: (0x00, 0x00, 0xFF),
-                        3: (0x16, 0x16, 0x1D)
-                    })
-            ds.write(out_data)
+        if args.attention is not True:
+            log.info(f'Writing {out_outfile} to disk')
+            with rio.open(out_outfile, 'w', **out_profile) as ds:
+                if args.cmyk:
+                    ds.write_colormap(
+                        1, {
+                            0: (0x00, 0xAE, 0xEF),
+                            1: (0xEC, 0x00, 0x8C),
+                            2: (0xFF, 0xEF, 0x00),
+                            3: (0x00, 0x00, 0x00)
+                        })
+                else:
+                    ds.write_colormap(
+                        1, {
+                            0: (0xFF, 0x00, 0x00),
+                            1: (0x00, 0xFF, 0x00),
+                            2: (0x00, 0x00, 0xFF),
+                            3: (0x16, 0x16, 0x1D)
+                        })
+                ds.write(out_data)
 
+    # Output salience results
     if args.salience:
         log.info(f'Writing {sal_outfile} to disk')
         with rio.open(sal_outfile, 'w', **sal_profile) as ds:
