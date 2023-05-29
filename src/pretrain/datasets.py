@@ -36,8 +36,10 @@ class SeriesDataset(torch.utils.data.Dataset):
                 with rio.open(cog, "r") as ds:
                     assert height == ds.height
                     assert width == ds.width
-            mod = len(cog_list) % series_length
-            cog_list = cog_list + cog_list[:mod]
+            rest = series_length - (len(cog_list) % series_length)
+            if rest != 0:
+                cog_list = cog_list + cog_list[:rest]
+            assert len(cog_list) % series_length == 0
             groups = split_list(cog_list, series_length)
             blocks_tall = height // dim
             blocks_wide = width // dim
@@ -100,5 +102,4 @@ class SeriesDataset(torch.utils.data.Dataset):
                 imagery_b.append(ds.read(window=w).astype(np.float32))
         imagery_a = np.stack(imagery_a, axis=0)
         imagery_b = np.stack(imagery_b, axis=0)
-
         return (imagery_a, imagery_b)
