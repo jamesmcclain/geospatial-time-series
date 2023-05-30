@@ -25,10 +25,11 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="The device to use for training (default: cuda)")
     parser.add_argument("--epochs", type=int, default=8, help="The number of epochs (default: 8)")
     parser.add_argument("--lr", type=float, default=1e-3, help="The learning rate (default: 1e-3)")
+    parser.add_argument('--no-pretrained', action='store_false', dest='pretrained', default=True, help='Whether to start from pretrained weights (default: True)')
     parser.add_argument("--num-workers", type=int, default=2, help="Number of worker processes for the DataLoader (default: 2)")
     parser.add_argument("--output-dir", type=str, default=".", help="The directory where logs and artifacts will be deposited (default: .)")
-    parser.add_argument("--pth-out", type=str, default="model.pth", help="The name of the output .pth file (default: model.pth)")
     parser.add_argument("--pth-in", type=str, help="Optional path to a .pth file to use as a starting point for model training")
+    parser.add_argument("--pth-out", type=str, default="model.pth", help="The name of the output .pth file (default: model.pth)")
     # yapf: enable
     args = parser.parse_args()
 
@@ -63,11 +64,11 @@ if __name__ == "__main__":
     # Model
     if args.pth_in is None:
         if args.architecture == "resnet18":
-            model = SeriesResNet18().to(device)
+            model = SeriesResNet18(pretrained=args.pretrained).to(device)
         elif args.architecture == "mobilenetv3":
-            model = SeriesMobileNetv3().to(device)
+            model = SeriesMobileNetv3(pretrained=args.pretrained).to(device)
         elif args.architecture == "efficientnetb0":
-            model = SeriesEfficientNetb0().to(device)
+            model = SeriesEfficientNetb0(pretrained=args.pretrained).to(device)
     elif args.pth_in:
         model = torch.load(args.pth_in, map_location=device).to(device)
         log.info(f"Model weights loaded from {args.pth_in}")
