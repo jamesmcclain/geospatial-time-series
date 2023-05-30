@@ -73,10 +73,11 @@ if __name__ == "__main__":
         model = torch.load(args.pth_in, map_location=device).to(device)
         log.info(f"Model weights loaded from {args.pth_in}")
 
-    # Loss function, optimizer, miner
+    # Loss function, optimizer, scheduler, miner
     base_obj = losses.TripletMarginLoss().to(device)
     obj = losses.SelfSupervisedLoss(base_obj).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
+    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, steps_per_epoch=len(dataloader), epochs=args.epochs)
     # miner = miners.BatchEasyHardMiner(pos_strategy="semihard",
     #                                   neg_strategy="easy")
 
@@ -94,8 +95,13 @@ if __name__ == "__main__":
             loss.backward()
             training_losses.append(loss.item())
             opt.step()
+            sched.step()
         training_losses = np.mean(training_losses)
         log.info(f"epoch={epoch} training_loss={training_losses}")
+        if args.output_dir is not None:
+            model_save_path = f"{args.output_dir}/{args.pth_out}"
+            model_save_path = model_save_path.replace(".pth", f"-{epoch}.pth")
+            torch.save(model, model_save_path)
 
     # Save the model after the last epoch if output_dir is provided
     if args.output_dir is not None:
