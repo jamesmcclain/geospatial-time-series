@@ -19,12 +19,14 @@ class SeriesDataset(torch.utils.data.Dataset):
                  cog_dirs: List[str],
                  dim: int = 512,
                  series_length: int = 5,
-                 debug: bool = False):
+                 debug: bool = False,
+                 dump_mode: bool = False):
         super().__init__()
         self.dim = dim
         self.dataset_length = 0
         self.nuggets = []
         self.debug = debug
+        self.dump_mode = dump_mode
 
         for cog_dir in cog_dirs:
             cog_list = glob.glob(f"{cog_dir}/**/cog.tif", recursive=True)
@@ -57,8 +59,11 @@ class SeriesDataset(torch.utils.data.Dataset):
         return self.dataset_length
 
     def __getitem__(self, index):
+        if index >= self.dataset_length:
+            raise StopIteration()
+
         nugget_start_index = 0
-        for nugget in self.nuggets:
+        for current_nugget, nugget in enumerate(self.nuggets):
             nugget_length = nugget.get("nugget_length")
             if index - nugget_start_index < nugget_length:
                 break
@@ -72,9 +77,10 @@ class SeriesDataset(torch.utils.data.Dataset):
 
         # Get the group
         group_index_a = (nugget_index + 0) % len(groups)
-        group_index_b = (nugget_index + 1) % len(groups)
         group_a = groups[group_index_a]
-        group_b = groups[group_index_b]
+        if not self.dump_mode:
+            group_index_b = (nugget_index + 1) % len(groups)
+            group_b = groups[group_index_b]
 
         # Calculate the window
         tile_index = nugget_index // len(groups)  # Index within tile
@@ -94,12 +100,20 @@ class SeriesDataset(torch.utils.data.Dataset):
 
         # Read the imagery
         imagery_a = []
-        imagery_b = []
-        for filename_a, filename_b in zip(group_a, group_b):
+        for filename_a in group_a:
             with rio.open(filename_a, "r") as ds:
                 imagery_a.append(ds.read(window=w).astype(np.float32))
-            with rio.open(filename_b, "r") as ds:
-                imagery_b.append(ds.read(window=w).astype(np.float32))
-        imagery_a = np.stack(imagery_a, axis=0)
-        imagery_b = np.stack(imagery_b, axis=0)
-        return (imagery_a, imagery_b)
+        imagery_a = torch.from_numpy(np.stack(imagery_a, axis=0))
+
+        if not self.dump_mode:
+            imagery_b = []
+            for filename_b in group_b:
+                with rio.open(filename_b, "r") as ds:
+                    imagery_b.append(ds.read(window=w).astype(np.float32))
+            imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
+
+        # Return imagery
+        if not self.dump_mode:
+            return (imagery_a, imagery_b)
+        else:
+            return (imagery_a, current_nugget, group_index_a, tile_y, tile_x)
