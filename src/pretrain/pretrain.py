@@ -11,7 +11,7 @@ import tqdm
 from pytorch_metric_learning import losses, miners
 from torch.utils.data import DataLoader
 
-from datasets import SeriesDataset
+from datasets import DigestDataset, SeriesDataset
 from models import (SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18,
                     freeze, unfreeze)
 
@@ -19,9 +19,10 @@ if __name__ == "__main__":
     # yapf: disable
     # Command line arguments
     parser = argparse.ArgumentParser(description="Pretrain a model using a bunch unlabeled Sentinel-2 time series")
-    parser.add_argument("cog_dirs", nargs="+", type=str, help="Path to the training set tarball")
+    parser.add_argument("cog_dirs", nargs="+", type=str, help="Paths to the data")
     parser.add_argument("--architecture", type=str, default="resnet18", choices=["resnet18", "mobilenetv3", "efficientnetb0"], help="The model architecture to use (default: resnet18)")
     parser.add_argument("--batch-size", type=int, default=8, help="The batch size (default: 8)")
+    parser.add_argument("--dataset", type=str, default="series", choices=["series", "digest"], help="The type of data found in the data directories (default: series)")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="The device to use for training (default: cuda)")
     parser.add_argument("--epochs", type=int, default=8, help="The number of epochs (default: 8)")
     parser.add_argument("--lr", type=float, default=1e-3, help="The learning rate (default: 1e-3)")
@@ -30,15 +31,19 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, default=".", help="The directory where logs and artifacts will be deposited (default: .)")
     parser.add_argument("--pth-in", type=str, help="Optional path to a .pth file to use as a starting point for model training")
     parser.add_argument("--pth-out", type=str, default="model.pth", help="The name of the output .pth file (default: model.pth)")
+    parser.add_argument("--series-length", type=int, default=5, help="The number of time steps in each sample (default: 5)")
+    parser.add_argument("--size", type=int, default=512, help="The tile size (default: 512)")
     # yapf: enable
     args = parser.parse_args()
 
     # Dataset and DataLoader for training set
-    dim = 512
-    series_length = 5
-    dataset = SeriesDataset(args.cog_dirs,
-                            dim=dim,
-                            series_length=series_length)
+    if args.dataset == "series":
+        assert args.size % 64 == 0
+        dataset = SeriesDataset(args.cog_dirs,
+                                dim=args.size,
+                                series_length=args.series_length)
+    elif args.dataset == "digest":
+        dataset = DigestDataset(args.cog_dirs)
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,
@@ -77,7 +82,11 @@ if __name__ == "__main__":
     base_obj = losses.TripletMarginLoss().to(device)
     obj = losses.SelfSupervisedLoss(base_obj).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
-    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, steps_per_epoch=len(dataloader), epochs=args.epochs)
+    sched = torch.optim.lr_scheduler.OneCycleLR(
+        opt,
+        max_lr=args.lr,
+        steps_per_epoch=len(dataloader),
+        epochs=args.epochs)
     # miner = miners.BatchEasyHardMiner(pos_strategy="semihard",
     #                                   neg_strategy="easy")
 
