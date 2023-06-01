@@ -1,5 +1,35 @@
 #!/usr/bin/env python3
 
+# BSD 3-Clause License
+#
+# Copyright (c) 2022-23, Azavea, Element84, James McClain
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 import argparse
 import copy
 import logging
@@ -192,7 +222,7 @@ if __name__ == '__main__':
                     y = window.row_off
                     w = window.width
                     h = window.height
-                    raw_data[:, y:(y + h), x:(x + w)] += raw[i, :, :, :].detach()
+                    raw_data[:, y:(y + h), x:(x + w)] += raw[i, :, :, :].detach()  # yapf: disable
 
     # Process inference or attention data
     if args.prediction:
@@ -211,8 +241,7 @@ if __name__ == '__main__':
                 np.stack([ds.read(window=window) for ds in in_datasets])
                 for window in batch
             ]).astype(np.float32)
-            batch_stack = torch.from_numpy(batch_stack).to(dtype=torch.float32,
-                                                           device=device)
+            batch_stack = torch.from_numpy(batch_stack).to(dtype=torch.float32, device=device)  # yapf: disable
             batch_stack.requires_grad = True
             raw = model(batch_stack)
             score, _ = torch.max(raw, dim=-3)
@@ -224,7 +253,7 @@ if __name__ == '__main__':
                 y = window.row_off
                 w = window.width
                 h = window.height
-                sal_data[:, y:(y + h), x:(x + w)] += sal[i, :, :, :].detach().cpu().numpy()
+                sal_data[:, y:(y + h), x:(x + w)] += sal[i, :, :, :].detach().cpu().numpy()  # yapf: disable
 
     # Close r/o datasets
     for dataset in in_datasets:
