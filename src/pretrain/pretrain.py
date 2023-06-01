@@ -21,7 +21,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pretrain a model using a bunch unlabeled Sentinel-2 time series")
     parser.add_argument("cog_dirs", nargs="+", type=str, help="Paths to the data")
     parser.add_argument("--architecture", type=str, default="resnet18", choices=["resnet18", "mobilenetv3", "efficientnetb0"], help="The model architecture to use (default: resnet18)")
-    parser.add_argument("--batch-size", type=int, default=8, help="The batch size (default: 8)")
+    parser.add_argument("--batch-size", type=int, default=6, help="The batch size (default: 6)")
     parser.add_argument("--dataset", type=str, default="series", choices=["series", "digest"], help="The type of data found in the data directories (default: series)")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="The device to use for training (default: cuda)")
     parser.add_argument("--epochs", type=int, default=8, help="The number of epochs (default: 8)")
@@ -31,7 +31,7 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, default=".", help="The directory where logs and artifacts will be deposited (default: .)")
     parser.add_argument("--pth-in", type=str, help="Optional path to a .pth file to use as a starting point for model training")
     parser.add_argument("--pth-out", type=str, default="model.pth", help="The name of the output .pth file (default: model.pth)")
-    parser.add_argument("--series-length", type=int, default=5, help="The number of time steps in each sample (default: 5)")
+    parser.add_argument("--series-length", type=int, default=8, help="The number of time steps in each sample (default: 8)")
     parser.add_argument("--size", type=int, default=512, help="The tile size (default: 512)")
     # yapf: enable
     args = parser.parse_args()
