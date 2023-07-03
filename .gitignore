@@ -8,3 +8,4 @@ wandb/
 *.tiff
 *.tif
 *.ovr
+*.parquet
