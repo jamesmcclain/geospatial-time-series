@@ -28,7 +28,7 @@ def compute_wgs84_bounding_box(geotiff_file):
     minlon, minlat = transformer.transform(bounds.left, bounds.bottom)
     maxlon, maxlat = transformer.transform(bounds.right, bounds.top)
 
-    wgs84_bbox = box(minlon, minlat, maxlon, maxlat)
+    wgs84_bbox = box(minlat, minlon, maxlat, maxlon)
 
     return wgs84_bbox
 
