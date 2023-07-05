@@ -42,11 +42,13 @@ def split_list(lst, chunk_size):
         sublists.append(lst[i:i + chunk_size])
     return sublists
 
+
 def dict_or_none(stuff):
     try:
         return dict(stuff)
     except:
         return dict()
+
 
 class DigestDataset(torch.utils.data.Dataset):
 
@@ -182,7 +184,7 @@ class SeriesDataset(torch.utils.data.Dataset):
         if not self.dump_mode and not self.single_mode:
             return (imagery_a, imagery_b)
         elif self.single_mode:
-            return imagery_a
+            return (imagery_a, w, nugget)
         else:
             return (imagery_a, current_nugget, group_index_a, tile_y, tile_x)
 
@@ -206,7 +208,26 @@ class SeriesParquetDataset(SeriesDataset):
 
         import geopandas as gpd
         import pandas as pd
+        import pyproj
+        from pyproj import CRS, Transformer
+        from rasterio.transform import Affine
         from shapely.wkt import loads
+
+        def create_pixel_to_wgs84_transformer(geotiff_file):
+            with rio.open(geotiff_file) as src:
+                transform = src.transform
+                crs = src.crs
+
+            pixel_transform = Affine(*transform[:6])
+            target_crs = CRS.from_epsg(4326)  # EPSG code for WGS84
+            transformer = Transformer.from_crs(crs, target_crs, always_xy=True)
+
+            def pixel_to_wgs84(x, y):
+                x_native, y_native = pixel_transform * (x, y)
+                lon, lat = transformer.transform(x_native, y_native)
+                return lon, lat
+
+            return pixel_to_wgs84
 
         for idx, cog_dir in enumerate(cog_dirs):
             parquet_files = glob.glob(f"{cog_dir}/**/*.parquet", recursive=True)
@@ -218,4 +239,14 @@ class SeriesParquetDataset(SeriesDataset):
                 dfs.append(df)
             df = pd.concat(dfs)
             gdf = gpd.GeoDataFrame(df)
-            self.nuggets[idx].update({"gdf": gdf})
+
+            cog = self.nuggets[idx].get("groups")[0][0]
+            pixel_to_wgs84 = create_pixel_to_wgs84_transformer(cog)
+            self.nuggets[idx].update({"gdf": gdf, "pixel_to_wgs84": pixel_to_wgs84})
+
+    def __getitem__(self, index):
+        imagery, w, nugget = super().__getitem__(index)
+        pixel_to_wgs84 = nugget.get("pixel_to_wgs84")
+        print(pixel_to_wgs84(0, 0))
+        print(pixel_to_wgs84(512, 512))
+        return None
