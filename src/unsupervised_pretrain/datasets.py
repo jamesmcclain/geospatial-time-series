@@ -42,6 +42,11 @@ def split_list(lst, chunk_size):
         sublists.append(lst[i:i + chunk_size])
     return sublists
 
+def dict_or_none(stuff):
+    try:
+        return dict(stuff)
+    except:
+        return dict()
 
 class DigestDataset(torch.utils.data.Dataset):
 
@@ -79,13 +84,15 @@ class SeriesDataset(torch.utils.data.Dataset):
                  dim: int = 512,
                  series_length: int = 5,
                  debug: bool = False,
-                 dump_mode: bool = False):
+                 dump_mode: bool = False,
+                 single_mode: bool = False):
         super().__init__()
         self.dim = dim
         self.dataset_length = 0
         self.nuggets = []
         self.debug = debug
         self.dump_mode = dump_mode
+        self.single_mode = single_mode
 
         for cog_dir in cog_dirs:
             cog_list = glob.glob(f"{cog_dir}/**/cog.tif", recursive=True)
@@ -164,7 +171,7 @@ class SeriesDataset(torch.utils.data.Dataset):
                 imagery_a.append(ds.read(window=w).astype(np.float32))
         imagery_a = torch.from_numpy(np.stack(imagery_a, axis=0))
 
-        if not self.dump_mode:
+        if not self.dump_mode and not self.single_mode:
             imagery_b = []
             for filename_b in group_b:
                 with rio.open(filename_b, "r") as ds:
@@ -172,7 +179,43 @@ class SeriesDataset(torch.utils.data.Dataset):
             imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
 
         # Return imagery
-        if not self.dump_mode:
+        if not self.dump_mode and not self.single_mode:
             return (imagery_a, imagery_b)
+        elif self.single_mode:
+            return imagery_a
         else:
             return (imagery_a, current_nugget, group_index_a, tile_y, tile_x)
+
+
+class SeriesParquetDataset(SeriesDataset):
+
+    def __init__(self,
+                 cog_dirs: List[str],
+                 dim: int = 512,
+                 series_length: int = 5,
+                 debug: bool = False,
+                 dump_mode: bool = False):
+
+        super().__init__(
+            cog_dirs = cog_dirs,
+            dim = dim,
+            series_length = series_length,
+            debug = debug,
+            dump_mode = False,
+            single_mode = True)
+
+        import geopandas as gpd
+        import pandas as pd
+        from shapely.wkt import loads
+
+        for idx, cog_dir in enumerate(cog_dirs):
+            parquet_files = glob.glob(f"{cog_dir}/**/*.parquet", recursive=True)
+            dfs = []
+            for parquet_file in parquet_files:
+                df = pd.read_parquet(parquet_files)[["wkt", "tags"]]
+                df["geometry"] = df["wkt"].apply(loads)
+                df["tags"] = df["tags"].apply(dict_or_none)
+                dfs.append(df)
+            df = pd.concat(dfs)
+            gdf = gpd.GeoDataFrame(df)
+            self.nuggets[idx].update({"gdf": gdf})
