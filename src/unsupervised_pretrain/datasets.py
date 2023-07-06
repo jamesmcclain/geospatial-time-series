@@ -40,6 +40,7 @@ from pyproj import CRS, Transformer
 from rasterio.transform import Affine
 from shapely.geometry import Point, box
 from shapely.wkt import loads
+from shapely.ops import unary_union
 
 
 def split_list(lst, chunk_size):
@@ -69,6 +70,58 @@ def dict_to_string(input_dict):
         pair = f"{key}: {value}"
         pairs.append(pair)
     return ", ".join(pairs)
+
+
+def rows_to_text(rows, bbox):
+
+    label_count = len(rows)
+    building_count = 0
+    total_area = bbox.area
+    building_union = []
+    nonbuilding_union = []
+
+    lines = []
+    for _, row in rows.iterrows():
+        tags = remove_none_values(row["tags"])
+        del tags["type"]
+        is_building = "building" in tags
+        if is_building:
+            building_count = building_count + 1
+            geometry = row["geometry"]
+            clipped_geometry = row["clipped_geometry"]
+            centroid = geometry.centroid
+            building_union.append(geometry)
+            line = f"There is a building at latitude {centroid.y} and longitude {centroid.x}.  It has tags: \"{tags}\".\n"
+        else:
+            clipped_geometry = row["clipped_geometry"]
+            percent = 100. * clipped_geometry.area / total_area
+            centroid = clipped_geometry.centroid
+            nonbuilding_union.append(clipped_geometry)
+            line = (
+                f"There is a label whose visible part is centered at latitude {centroid.y} and longitude {centroid.x}, "
+                f"it occupies {percent:.1f}% of the visible area and has tags: \"{tags}\".\n"
+            )
+        lines.append(line)
+
+    building_pct = 100. * unary_union(building_union).area / total_area
+    nonbuilding_pct = 100. * unary_union(nonbuilding_union).area / total_area
+
+    random.shuffle(lines)
+    x0, y0 = bbox.exterior.coords[0]
+    x1, y1 = bbox.exterior.coords[2]
+    first_line = (
+        f"There are {label_count} labels, "
+        f"of which {building_count} are buildings and "
+        f"{label_count - building_count} are non-buildings. "
+        f"Building labels occupy {building_pct:.1f}% of the visible area, "
+        f"while non-building labels occupy {nonbuilding_pct:.1f}% of the visible area. "
+        "The bounding box of the visible area has corners at "
+        f"latitude {min(y0, y1)} and longitude {min(x0, x1)}, and "
+        f"latitude {max(y0, y1)} and longitude {max(x0, x1)}\n"
+    )
+    lines = [first_line] + lines
+
+    return '\n'.join(lines)
 
 
 class DigestDataset(torch.utils.data.Dataset):
@@ -268,56 +321,8 @@ class SeriesParquetDataset(SeriesDataset):
         lon_min, lat_min = pixel_to_wgs84(w.col_off, w.row_off)
         lon_max, lat_max = pixel_to_wgs84(w.col_off + w.width, w.row_off + w.height)
         bbox = box(lon_min, lat_min, lon_max, lat_max)
-        bbox_centroid = bbox.centroid
-        bbox_size = bbox_centroid.distance(bbox.boundary)
-        bbox_area = bbox.area
-
         gdf = nugget.get("gdf")
         intersections = gdf[gdf.intersects(bbox)].copy()
         intersections["clipped_geometry"] = intersections["geometry"].intersection(bbox)
 
-        lines = []
-
-        for _, row in intersections.iterrows():
-            geom = row["geometry"]
-            clipped_geom  = row["clipped_geometry"]
-            tags = row["tags"]
-            tags = dict_to_string(remove_none_values(tags)) if tags is not None else ""
-            area = 100. * geom.area / bbox_area
-            percent = 100. * clipped_geom.area / geom.area
-            centroid = clipped_geom.centroid
-            left_right = np.argmin([
-                Point(lon_min, bbox_centroid.y).distance(centroid),
-                Point(lon_max, bbox_centroid.y).distance(centroid),
-                bbox_centroid.distance(centroid),
-            ])
-            up_down = np.argmin([
-                Point(bbox_centroid.x, lat_min).distance(centroid),
-                Point(bbox_centroid.x, lat_max).distance(centroid),
-                bbox_centroid.distance(centroid),
-            ])
-            left_right = {0: "to the left", 1: "to the right", 2: "near the center"}[left_right]
-            up_down = {0: "upper", 1: "lower", 2: "central"}[up_down]
-            proximity = centroid.distance(bbox) / bbox_size
-            proximity = "near to" if proximity < .5 else "far from"
-
-            line = (
-                f"There is a label occupying {area:.2f}% of the visible area. "
-                f"About {percent}% of that label is contained in the visible area. "
-                f"It is located {left_right} horizontally "
-                f"and in the {up_down} part of the of the window vertically. "
-                f"It is {proximity} the boundary of the visible area. "
-                f"The label has tags {tags}"
-            )
-            lines.append(line)
-
-        random.shuffle(lines)
-        if len(intersections) == 0:
-            first_line = "No labels are visible."
-        elif len(intersections) == 1:
-            first_line = "One label is visible."
-        else:
-            first_line = f"There are {len(intersections)} labels visible."
-        lines = [first_line] + lines
-
-        return '\n'.join(lines)
+        return rows_to_text(intersections, bbox)
