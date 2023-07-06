@@ -29,11 +29,17 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import glob
+import random
 from typing import List
 
 import numpy as np
+import pyproj
 import rasterio as rio
 import torch
+from pyproj import CRS, Transformer
+from rasterio.transform import Affine
+from shapely.geometry import Point, box
+from shapely.wkt import loads
 
 
 def split_list(lst, chunk_size):
@@ -48,6 +54,21 @@ def dict_or_none(stuff):
         return dict(stuff)
     except:
         return dict()
+
+
+def remove_none_values(input_dict):
+    return {
+        key: value
+        for key, value in input_dict.items() if value is not None
+    }
+
+
+def dict_to_string(input_dict):
+    pairs = []
+    for key, value in input_dict.items():
+        pair = f"{key}: {value}"
+        pairs.append(pair)
+    return ", ".join(pairs)
 
 
 class DigestDataset(torch.utils.data.Dataset):
@@ -96,8 +117,8 @@ class SeriesDataset(torch.utils.data.Dataset):
         self.dump_mode = dump_mode
         self.single_mode = single_mode
 
-        for cog_dir in cog_dirs:
-            cog_list = glob.glob(f"{cog_dir}/**/cog.tif", recursive=True)
+        for cog_dir in sorted(cog_dirs):
+            cog_list = sorted(glob.glob(f"{cog_dir}/**/cog.tif", recursive=True))  # yapf: disable
             cog_list.sort()
             with rio.open(cog_list[0], "r") as ds:
                 height = ds.height
@@ -208,10 +229,6 @@ class SeriesParquetDataset(SeriesDataset):
 
         import geopandas as gpd
         import pandas as pd
-        import pyproj
-        from pyproj import CRS, Transformer
-        from rasterio.transform import Affine
-        from shapely.wkt import loads
 
         def create_pixel_to_wgs84_transformer(geotiff_file):
             with rio.open(geotiff_file) as src:
@@ -246,7 +263,61 @@ class SeriesParquetDataset(SeriesDataset):
 
     def __getitem__(self, index):
         imagery, w, nugget = super().__getitem__(index)
+
         pixel_to_wgs84 = nugget.get("pixel_to_wgs84")
-        print(pixel_to_wgs84(0, 0))
-        print(pixel_to_wgs84(512, 512))
-        return None
+        lon_min, lat_min = pixel_to_wgs84(w.col_off, w.row_off)
+        lon_max, lat_max = pixel_to_wgs84(w.col_off + w.width, w.row_off + w.height)
+        bbox = box(lon_min, lat_min, lon_max, lat_max)
+        bbox_centroid = bbox.centroid
+        bbox_size = bbox_centroid.distance(bbox.boundary)
+        bbox_area = bbox.area
+
+        gdf = nugget.get("gdf")
+        intersections = gdf[gdf.intersects(bbox)].copy()
+        intersections["clipped_geometry"] = intersections["geometry"].intersection(bbox)
+
+        lines = []
+
+        for _, row in intersections.iterrows():
+            geom = row["geometry"]
+            clipped_geom  = row["clipped_geometry"]
+            tags = row["tags"]
+            tags = dict_to_string(remove_none_values(tags)) if tags is not None else ""
+            area = 100. * geom.area / bbox_area
+            percent = 100. * clipped_geom.area / geom.area
+            centroid = clipped_geom.centroid
+            left_right = np.argmin([
+                Point(lon_min, bbox_centroid.y).distance(centroid),
+                Point(lon_max, bbox_centroid.y).distance(centroid),
+                bbox_centroid.distance(centroid),
+            ])
+            up_down = np.argmin([
+                Point(bbox_centroid.x, lat_min).distance(centroid),
+                Point(bbox_centroid.x, lat_max).distance(centroid),
+                bbox_centroid.distance(centroid),
+            ])
+            left_right = {0: "to the left", 1: "to the right", 2: "near the center"}[left_right]
+            up_down = {0: "upper", 1: "lower", 2: "central"}[up_down]
+            proximity = centroid.distance(bbox) / bbox_size
+            proximity = "near to" if proximity < .5 else "far from"
+
+            line = (
+                f"There is a label occupying {area:.2f}% of the visible area. "
+                f"About {percent}% of that label is contained in the visible area. "
+                f"It is located {left_right} horizontally "
+                f"and in the {up_down} part of the of the window vertically. "
+                f"It is {proximity} the boundary of the visible area. "
+                f"The label has tags {tags}"
+            )
+            lines.append(line)
+
+        random.shuffle(lines)
+        if len(intersections) == 0:
+            first_line = "No labels are visible."
+        elif len(intersections) == 1:
+            first_line = "One label is visible."
+        else:
+            first_line = f"There are {len(intersections)} labels visible."
+        lines = [first_line] + lines
+
+        return '\n'.join(lines)
