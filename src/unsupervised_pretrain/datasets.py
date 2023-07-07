@@ -39,8 +39,8 @@ import torch
 from pyproj import CRS, Transformer
 from rasterio.transform import Affine
 from shapely.geometry import Point, box
-from shapely.wkt import loads
 from shapely.ops import unary_union
+from shapely.wkt import loads
 
 
 def split_list(lst, chunk_size):
@@ -117,8 +117,7 @@ def rows_to_text(rows, bbox):
         f"while non-building labels occupy {nonbuilding_pct:.1f}% of the visible area. "
         "The bounding box of the visible area has corners at "
         f"latitude {min(y0, y1)} and longitude {min(x0, x1)}, and "
-        f"latitude {max(y0, y1)} and longitude {max(x0, x1)}\n"
-    )
+        f"latitude {max(y0, y1)} and longitude {max(x0, x1)}\n")
     lines = [first_line] + lines
 
     return '\n'.join(lines)
@@ -161,14 +160,14 @@ class SeriesDataset(torch.utils.data.Dataset):
                  series_length: int = 5,
                  debug: bool = False,
                  dump_mode: bool = False,
-                 single_mode: bool = False):
+                 text_mode: bool = False):
         super().__init__()
         self.dim = dim
         self.dataset_length = 0
         self.nuggets = []
         self.debug = debug
         self.dump_mode = dump_mode
-        self.single_mode = single_mode
+        self.text_mode = text_mode
 
         for cog_dir in sorted(cog_dirs):
             cog_list = sorted(glob.glob(f"{cog_dir}/**/cog.tif", recursive=True))  # yapf: disable
@@ -240,6 +239,10 @@ class SeriesDataset(torch.utils.data.Dataset):
         if self.debug:
             print(group_a[0], group_b[0], tile_x, tile_y)
 
+        # Return text
+        if self.text_mode:
+            return (w, nugget)
+
         # Read the imagery
         imagery_a = []
         for filename_a in group_a:
@@ -247,7 +250,7 @@ class SeriesDataset(torch.utils.data.Dataset):
                 imagery_a.append(ds.read(window=w).astype(np.float32))
         imagery_a = torch.from_numpy(np.stack(imagery_a, axis=0))
 
-        if not self.dump_mode and not self.single_mode:
+        if not self.dump_mode and not self.text_mode:
             imagery_b = []
             for filename_b in group_b:
                 with rio.open(filename_b, "r") as ds:
@@ -255,12 +258,12 @@ class SeriesDataset(torch.utils.data.Dataset):
             imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
 
         # Return imagery
-        if not self.dump_mode and not self.single_mode:
+        if not self.dump_mode and not self.text_mode:
             return (imagery_a, imagery_b)
-        elif self.single_mode:
-            return (imagery_a, w, nugget)
-        else:
+        elif self.dump_mode:
             return (imagery_a, current_nugget, group_index_a, tile_y, tile_x)
+        else:
+            raise NotImplemented()
 
 
 class SeriesParquetDataset(SeriesDataset):
@@ -278,7 +281,7 @@ class SeriesParquetDataset(SeriesDataset):
             series_length = series_length,
             debug = debug,
             dump_mode = False,
-            single_mode = True)
+            text_mode = True)
 
         import geopandas as gpd
         import pandas as pd
@@ -315,7 +318,7 @@ class SeriesParquetDataset(SeriesDataset):
             self.nuggets[idx].update({"gdf": gdf, "pixel_to_wgs84": pixel_to_wgs84})
 
     def __getitem__(self, index):
-        imagery, w, nugget = super().__getitem__(index)
+        w, nugget = super().__getitem__(index)
 
         pixel_to_wgs84 = nugget.get("pixel_to_wgs84")
         lon_min, lat_min = pixel_to_wgs84(w.col_off, w.row_off)
