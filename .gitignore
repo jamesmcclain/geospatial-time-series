@@ -10,3 +10,4 @@ wandb/
 *.ovr
 *.parquet
 *.json
+*.tar
