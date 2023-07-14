@@ -91,17 +91,17 @@ def rows_to_text(rows, bbox):
             clipped_geometry = row["clipped_geometry"]
             centroid = geometry.centroid
             building_union.append(geometry)
-            line = f"There is a building at latitude {centroid.y} and longitude {centroid.x}.  It has tags: \"{tags}\".\n"
+            # line = f"There is a building at latitude {centroid.y} and longitude {centroid.x}.  It has tags: \"{tags}\".\n"
         else:
             clipped_geometry = row["clipped_geometry"]
             percent = 100. * clipped_geometry.area / total_area
             centroid = clipped_geometry.centroid
             nonbuilding_union.append(clipped_geometry)
             line = (
-                f"There is a label whose visible part is centered at latitude {centroid.y} and longitude {centroid.x}, "
-                f"it occupies {percent:.1f}% of the visible area and has tags: \"{tags}\".\n"
+                f"There is a label that occupies {percent:.1f}% "
+                f"of the visible area and has tags: \"{tags}\"."
             )
-        lines.append(line)
+            lines.append(line)
 
     building_pct = 100. * unary_union(building_union).area / total_area
     nonbuilding_pct = 100. * unary_union(nonbuilding_union).area / total_area
@@ -109,18 +109,21 @@ def rows_to_text(rows, bbox):
     random.shuffle(lines)
     x0, y0 = bbox.exterior.coords[0]
     x1, y1 = bbox.exterior.coords[2]
+    # first_line = (
+    #     f"There are {label_count} labels, "
+    #     f"of which {building_count} are buildings and "
+    #     f"{label_count - building_count} are non-buildings. "
+    #     f"Building labels occupy {building_pct:.1f}% of the visible area, "
+    #     f"while non-building labels occupy {nonbuilding_pct:.1f}% of the visible area. "
+    #     "The bounding box of the visible area has corners at "
+    #     f"latitude {min(y0, y1)} and longitude {min(x0, x1)}, and "
+    #     f"latitude {max(y0, y1)} and longitude {max(x0, x1)}\n")
     first_line = (
-        f"There are {label_count} labels, "
-        f"of which {building_count} are buildings and "
-        f"{label_count - building_count} are non-buildings. "
-        f"Building labels occupy {building_pct:.1f}% of the visible area, "
-        f"while non-building labels occupy {nonbuilding_pct:.1f}% of the visible area. "
-        "The bounding box of the visible area has corners at "
-        f"latitude {min(y0, y1)} and longitude {min(x0, x1)}, and "
-        f"latitude {max(y0, y1)} and longitude {max(x0, x1)}\n")
+        f"The scene has {building_count} are buildings. "
+        f"Labeled areas occupy {nonbuilding_pct:.1f}% of the visible area.")
     lines = [first_line] + lines
 
-    return '\n'.join(lines)
+    return ' '.join(lines)
 
 
 class DigestDataset(torch.utils.data.Dataset):
