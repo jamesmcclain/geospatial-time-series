@@ -69,6 +69,7 @@ def dict_or_none(stuff):
     except:
         return dict()
 
+
 if __name__ == "__main__":
     # yapf: disable
     parser = argparse.ArgumentParser()
@@ -111,4 +112,4 @@ if __name__ == "__main__":
         nugget = list(filter(lambda s: len(s) > 0, geotiff_dir.split("/")))[-1]
 
         inter = gdf[gdf.intersects(bbox)]
-        inter[["wkt", "tags"]].to_parquet(f"{args.output_dir}/{nugget}.parquet")
+        inter[["wkt", "tags"]].to_parquet(f"{args.output_dir}/{nugget}.parquet")  # yapf: disable

@@ -29,6 +29,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import glob
+import math
 import random
 from typing import List
 
@@ -41,7 +42,6 @@ from rasterio.transform import Affine
 from shapely.geometry import Point, box
 from shapely.ops import unary_union
 from shapely.wkt import loads
-import math
 
 
 def split_list(lst, chunk_size):
@@ -109,10 +109,8 @@ def rows_to_text(rows, bbox):
                 leisure = tags.get("leisure").replace("_", " ")
                 line = f"There is a {leisure} (leisure area) that occupies {percent:.1f}% of the visible area."
             else:
-                line = (
-                    f"There is an area that occupies {percent:.1f}% "
-                    f"of the visible area that has tags: \"{tags}\"."
-                )
+                line = (f"There is an area that occupies {percent:.1f}% "
+                        f"of the visible area that has tags: \"{tags}\".")
             lines.append(line)
 
     building_pct = 100. * unary_union(building_union).area / total_area
@@ -263,7 +261,7 @@ class SeriesDataset(torch.utils.data.Dataset):
             group_b = groups[group_index_b]
 
         # Calculate the window
-        tile_relative_index = nugget_relative_index // len(groups)  # Index within tile
+        tile_relative_index = nugget_relative_index // len(groups)  # yapf:disable Index within tile
         tile_y = tile_relative_index % blocks_wide
         tile_x = tile_relative_index // blocks_wide
         # yapf: disable
