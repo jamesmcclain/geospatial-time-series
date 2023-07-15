@@ -41,17 +41,19 @@ import tqdm
 import transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-CHOICES = [
+LLM_CHOICES = [
     "tiiuae/falcon-7b-instruct", "cerebras/Cerebras-GPT-1.3B",
     "tiiuae/falcon-40b-instruct", "mosaicml/mpt-7b-instruct"
 ]
 
+OTHER_CHOICES = []
 
-def text_to_line(generated_text):
+
+def gentext_to_line(generated_text):
     split = generated_text.split("\n")
-    while not split[0].startswith("Answer: "):
+    while not split[0].startswith("Summary: "):
         split = split[1:]
-    split[0] = split[0].replace("Answer: ", "")
+    split[0] = split[0].replace("Summary: ", "")
     return " ".join(split)
 
 
@@ -60,7 +62,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("input_json", type=str, help="Where to input the text labels from")
     parser.add_argument("output_json", type=str, help="Where to output the re-written text labels to")
-    parser.add_argument("--model", type=str, default="tiiuae/falcon-7b-instruct", choices=CHOICES, help="The LLM to use to summarize/rewrite the text labels")
+    parser.add_argument("--model", type=str, default="tiiuae/falcon-7b-instruct", choices=LLM_CHOICES + OTHER_CHOICES, help="The LLM to use to summarize/rewrite the text labels")
     args = parser.parse_args()
     # yapf: enable
 
@@ -85,27 +87,35 @@ if __name__ == "__main__":
     )
     log.info("... done loading")
 
-    instructions = "You are an expert geographer who gives clear, one-sentence summaries of scenes that you are asked to summarize. You discuss buildings, the types of flora, the types of terrain, and how the land is being used by people.\n"
-
-    log.info(f"Rewriting each label times...")
+    log.info(f"Rewriting labels ...")
     new_lines = []
-    for line in tqdm.tqdm(lines):
-        prompt = f"{instructions}Question: Please summarize the following geographic information: {line}\nAnswer: "
+    lines = list(filter(lambda s: "tags" in s, lines))  # XXX
+    for line in tqdm.tqdm(lines[:20]):
+        # if "tags" not in line:
+        #     new_lines.append(line)
+        #     continue
+        prompt = f"""
+You are an expert at summarizing geographic data.  For each label, you report its percentage of the visible area and only one other salient fact.
+
+Please summarize the following geographic data: {line}
+
+Summary: The scene contains"""
+
         sequences = pipeline(
             prompt,
-            max_length=1024,
-            # max_length=1536,
-            # max_length=2048,
-            do_sample=True,
-            top_k=3,
+            # max_length=1024,
+            # # max_length=1536,
+            # # max_length=2048,
+            # do_sample=True,
+            # top_k=3,
+            max_new_tokens=128,
             num_return_sequences=1,
             eos_token_id=tokenizer.eos_token_id,
             pad_token_id=tokenizer.eos_token_id,
             # temperature=0.,
         )
-        for seq in sequences:
-            new_line = text_to_line(seq.get("generated_text"))
-            new_lines.append(new_line)
+        new_line = gentext_to_line(sequences[0].get("generated_text"))
+        new_lines.append(new_line)
 
     log.info(f"Writing rewritten labels to {args.output_json}")
     with open(args.output_json, "w") as f:
