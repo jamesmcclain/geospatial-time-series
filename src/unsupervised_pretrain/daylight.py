@@ -55,8 +55,12 @@ def compute_wgs84_bounding_box(geotiff_file):
     target_proj = Proj("EPSG:4326")
     transformer = Transformer.from_proj(src_proj, target_proj)
 
-    minlon, minlat = transformer.transform(bounds.left, bounds.bottom)
-    maxlon, maxlat = transformer.transform(bounds.right, bounds.top)
+    if src_proj.crs.axis_info[0].direction.lower() in {"north", "south"}:
+        minlat, minlon = transformer.transform(bounds.left, bounds.bottom)
+        maxlat, maxlon = transformer.transform(bounds.right, bounds.top)
+    else:
+        minlon, minlat = transformer.transform(bounds.left, bounds.bottom)
+        maxlon, maxlat = transformer.transform(bounds.right, bounds.top)
 
     wgs84_bbox = box(minlat, minlon, maxlat, maxlon)
 
