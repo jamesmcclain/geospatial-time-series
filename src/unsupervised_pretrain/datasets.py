@@ -30,7 +30,6 @@
 
 import glob
 import math
-import random
 from typing import List
 
 import numpy as np
@@ -100,17 +99,22 @@ def rows_to_text(rows, bbox):
             clipped_geometry = row["clipped_geometry"]
             percent = 100. * clipped_geometry.area / total_area
             nonbuilding_union.append(clipped_geometry)
-            if percent < 1.:
-                continue  # Suppress areas that are less than 1% of the scene
+            if percent < 5.:
+                continue  # Suppress areas that are less than 5% of the scene
             if "natural" in tags or "landuse" in tags:
                 lulc = tags.get("natural", tags.get("landuse"))
                 line = f"There is {lulc} area that occupies {percent:.1f}% of the visible area."
             elif "leisure" in tags:
                 leisure = tags.get("leisure").replace("_", " ")
-                line = f"There is a {leisure} (leisure area) that occupies {percent:.1f}% of the visible area."
+                line = f"There is a {leisure} that occupies {percent:.1f}% of the visible area."
+            elif "boundary" in tags:
+                boundary = tags.get("boundary").replace("_", " ")
+                line = f"There is {boundary} that occupies {percent:.1f}% of the visible area."
             else:
-                line = (f"There is an area that occupies {percent:.1f}% "
-                        f"of the visible area that has tags: \"{tags}\".")
+                line = f"There is a strange area that occupies {percent:.1f}% of the visible area."
+            # else:
+            #     line = (f"There is an area that occupies {percent:.1f}% "
+            #             f"of the visible area that has tags: \"{tags}\".")
             lines.append(line)
 
     building_pct = 100. * unary_union(building_union).area / total_area
@@ -132,27 +136,11 @@ def rows_to_text(rows, bbox):
     building_types = ", ".join(building_types)
 
     if len(rows) > 0:
-        random.shuffle(lines)
         first_line = f"There are {plural_noun} buildings in the scene"
         if len(building_types) > 0:
             first_line += f" of type {building_types}."
         else:
             first_line += "."
-        # # x0, y0 = bbox.exterior.coords[0]
-        # # x1, y1 = bbox.exterior.coords[2]
-        # # first_line = (
-        # #     f"There are {label_count} labels, "
-        # #     f"of which {building_count} are buildings and "
-        # #     f"{label_count - building_count} are non-buildings. "
-        # #     f"Building labels occupy {building_pct:.1f}% of the visible area, "
-        # #     f"while non-building labels occupy {nonbuilding_pct:.1f}% of the visible area. "
-        # #     "The bounding box of the visible area has corners at "
-        # #     f"latitude {min(y0, y1)} and longitude {min(x0, x1)}, and "
-        # #     f"latitude {max(y0, y1)} and longitude {max(x0, x1)}\n")
-        # # first_line = (
-        # #     f"The scene has {building_count} buildings. "
-        # #     f"Labeled areas occupy {nonbuilding_pct:.1f}% of the visible area.")
-        # first_line = f"The scene has {building_count} buildings. "
         lines = [first_line] + lines
     else:
         lines = ["No information is available about this area."]
