@@ -37,7 +37,7 @@ import sys
 
 import tqdm
 
-from datasets import ParquetHackDataset
+from parquet_dataset import ParquetHackDataset
 
 if __name__ == "__main__":
     # yapf: disable
