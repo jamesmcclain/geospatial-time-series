@@ -41,8 +41,8 @@ import tqdm
 from pytorch_metric_learning import losses, miners
 from torch.utils.data import DataLoader
 
-from datasets import DigestDataset, SeriesDataset
-from models import (SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18,
+from datasets import DigestDataset, SeriesDataset, SeriesEmbedDataset
+from models import (SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18, Hat,
                     freeze, unfreeze)
 
 if __name__ == "__main__":
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     parser.add_argument("cog_dirs", nargs="+", type=str, help="Paths to the data")
     parser.add_argument("--architecture", type=str, default="resnet18", choices=["resnet18", "mobilenetv3", "efficientnetb0"], help="The model architecture to use (default: resnet18)")
     parser.add_argument("--batch-size", type=int, default=6, help="The batch size (default: 6)")
-    parser.add_argument("--dataset", type=str, default="series", choices=["series", "digest"], help="The type of data found in the data directories (default: series)")
+    parser.add_argument("--dataset", type=str, default="series", choices=["embed-series", "series", "digest"], help="The type of data found in the data directories (default: series)")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="The device to use for training (default: cuda)")
     parser.add_argument("--epochs", type=int, default=8, help="The number of epochs (default: 8)")
     parser.add_argument("--lr", type=float, default=1e-3, help="The learning rate (default: 1e-3)")
@@ -70,7 +70,12 @@ if __name__ == "__main__":
     if args.dataset == "series":
         assert args.size % 64 == 0
         dataset = SeriesDataset(args.cog_dirs,
-                                dim=args.size,
+                                size=args.size,
+                                series_length=args.series_length)
+    elif args.dataset == "embed-series":
+        assert args.size % 64 == 0
+        dataset = SeriesEmbedDataset(args.cog_dirs,
+                                size=args.size,
                                 series_length=args.series_length)
     elif args.dataset == "digest":
         dataset = DigestDataset(args.cog_dirs)
@@ -83,9 +88,7 @@ if __name__ == "__main__":
     )
 
     # Logging
-    logging.basicConfig(stream=sys.stderr,
-                        level=logging.INFO,
-                        format="%(asctime)-15s %(message)s")
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(asctime)-15s %(message)s")  # yapf: disable
     log = logging.getLogger()
     if args.output_dir is not None:
         fh = logging.FileHandler(f"{args.output_dir}/output.log")
@@ -108,29 +111,52 @@ if __name__ == "__main__":
         model = torch.load(args.pth_in, map_location=device).to(device)
         log.info(f"Model weights loaded from {args.pth_in}")
 
+    if args.dataset == "embed-series":
+        E = 768  # Instructor-XL
+        hat = Hat(dim1 = model.embedding_dim, dim2 = E).to(device)
+
     # Loss function, optimizer, scheduler, miner
     base_obj = losses.TripletMarginLoss().to(device)
     obj = losses.SelfSupervisedLoss(base_obj).to(device)
+    if args.dataset == "embed-series":
+        obj2 = torch.nn.CosineEmbeddingLoss().to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     sched = torch.optim.lr_scheduler.OneCycleLR(
         opt,
         max_lr=args.lr,
         steps_per_epoch=len(dataloader),
         epochs=args.epochs)
-    # miner = miners.BatchEasyHardMiner(pos_strategy="semihard",
-    #                                   neg_strategy="easy")
 
     model.train()
+    target = torch.ones(1, device=device)
     for epoch in range(0, args.epochs):
         training_losses = []
         for data in tqdm.tqdm(dataloader):
-            imagery_a, imagery_b = data
+
+            if args.dataset == "embed-series":
+                imagery_a, imagery_b, embeddings_text_a, embeddings_text_b = data
+            else:
+                imagery_a, imagery_b = data
+
             opt.zero_grad()
-            embeddings_a = model(imagery_a.to(device))
-            embeddings_b = model(imagery_b.to(device))
-            # good_pairs = miner(embeddings_a, embeddings_b).to(device)
-            # loss = obj(embeddings_a, embeddings_b, good_pairs)
-            loss = obj(embeddings_a, embeddings_b)
+            embeddings_visual_a = model(imagery_a.to(device))
+            embeddings_visual_b = model(imagery_b.to(device))
+            loss = obj(embeddings_visual_a, embeddings_visual_b)
+
+            if args.dataset == "embed-series":
+                embeddings_visual_a = hat(embeddings_visual_a)
+                embeddings_visual_b = hat(embeddings_visual_b)
+                embeddings_text_a = embeddings_text_a.to(device)
+                embeddings_text_b = embeddings_text_b.to(device)
+                if target.shape[0] != embeddings_visual_a.shape[0]:
+                    assert embeddings_visual_a.shape == embeddings_text_a.shape
+                    target = torch.ones(embeddings_visual_a.shape[0], device=device)
+                loss += obj2(embeddings_visual_a, embeddings_text_a, target)
+                if target.shape[0] != embeddings_visual_b.shape[0]:
+                    assert embeddings_visual_b.shape == embeddings_text_b.shape
+                    target = torch.ones(embeddings_visual_b.shape[0], device=device)
+                loss += obj2(embeddings_visual_b, embeddings_text_b, target)
+
             loss.backward()
             training_losses.append(loss.item())
             opt.step()
