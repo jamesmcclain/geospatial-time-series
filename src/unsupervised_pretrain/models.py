@@ -48,6 +48,20 @@ def unfreeze(m: torch.nn.Module) -> torch.nn.Module:
         p.requires_grad = True
 
 
+class Hat(torch.nn.Module):
+
+    def __init__(self, dim1, dim2):
+        super(Hat, self).__init__()
+        between = (dim1 + dim2) // 2
+        self.net = torch.nn.Sequential(
+            torch.nn.Linear(dim1, between),
+            torch.nn.ReLU(),
+            torch.nn.Linear(between, dim2),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
 class SeriesModel(torch.nn.Module):
 
     def __init__(self):
@@ -97,10 +111,13 @@ class SeriesEfficientNetb0(SeriesModel):
                                              padding=(1, 1),
                                              bias=False)
 
-        # Classifier and attention
+        # Classifier (for attention) and attention
         self.classifier = net.classifier
         D1 = self.classifier[-1].out_features
         self.attn_linear1 = torch.nn.Linear(D1, D2)
+
+        # Embedding dimensions
+        self.embedding_dim = self.classifier[1].in_features
 
 
 class SeriesMobileNetv3(SeriesModel):
@@ -124,10 +141,13 @@ class SeriesMobileNetv3(SeriesModel):
                                              padding=(1, 1),
                                              bias=False)
 
-        # Classifier and attention
+        # Classifier (for attention) and attention
         self.classifier = net.classifier
         D1 = self.classifier[-1].out_features
         self.attn_linear1 = torch.nn.Linear(D1, D2)
+
+        # Embedding dimensions
+        self.embedding_dim = self.classifier[0].in_features
 
 
 class SeriesResNet18(SeriesModel):
@@ -147,8 +167,11 @@ class SeriesResNet18(SeriesModel):
                                          padding=(3, 3),
                                          bias=False)
 
-        # Classifier and attention
+        # Classifier (for attention) and attention
         self.classifier = self.net.fc
         self.net.fc = torch.nn.Identity()
         D1 = self.classifier.out_features
         self.attn_linear1 = torch.nn.Linear(D1, D2)
+
+        # Embedding dimensions
+        self.embedding_dim = self.classifier.in_features
