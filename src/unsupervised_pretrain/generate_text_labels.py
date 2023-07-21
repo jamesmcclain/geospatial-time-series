@@ -37,7 +37,7 @@ import sys
 
 import tqdm
 
-from datasets import SeriesParquetDataset
+from datasets import ParquetHackDataset
 
 if __name__ == "__main__":
     # yapf: disable
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     log = logging.getLogger()
     # yapf: enable
 
-    ds = SeriesParquetDataset(args.cog_dirs)
+    ds = ParquetHackDataset(args.cog_dirs)
 
     log.info(f"The dataset is of size {len(ds)}")
     labels = []

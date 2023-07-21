@@ -291,7 +291,7 @@ class SeriesDataset(torch.utils.data.Dataset):
             raise NotImplemented()
 
 
-class SeriesParquetDataset(SeriesDataset):
+class ParquetHackDataset(SeriesDataset):
 
     def __init__(self,
                  cog_dirs: List[str],
