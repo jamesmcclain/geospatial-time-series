@@ -139,15 +139,11 @@ class ParquetHackDataset(SeriesDataset):
     def __init__(self,
                  cog_dirs: List[str],
                  dim: int = 512,
-                 series_length: int = 5,
-                 debug: bool = False,
-                 dump_mode: bool = False):
+                 series_length: int = 5):
 
         super().__init__(cog_dirs=cog_dirs,
                          dim=dim,
                          series_length=series_length,
-                         debug=debug,
-                         dump_mode=False,
                          text_mode=True)
 
         def create_pixel_to_wgs84_transformer(geotiff_file):
