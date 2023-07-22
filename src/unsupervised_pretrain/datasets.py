@@ -203,7 +203,7 @@ class SeriesEmbedDataset(SeriesDataset):
             cog_dir_parts = cog_dir.split("/")
             while len(cog_dir_parts[-1]) == 0:
                 cog_dir_parts = cog_dir_parts[:-1]
-            embedding_filename = f"{cog_dir_parts[-1]}-{series_length}.npy"
+            embedding_filename = f"{cog_dir_parts[-1]}-{size}-{series_length}.npy"
             embedding_filename = f"{cog_dir}/**/{embedding_filename}"
             embedding_filename = glob.glob(embedding_filename, recursive=True)[-1]
             nugget["embeddings"] = np.load(embedding_filename)
