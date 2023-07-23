@@ -38,7 +38,6 @@ import sys
 
 import numpy as np
 import torch
-import tqdm
 from InstructorEmbedding import INSTRUCTOR
 
 if __name__ == "__main__":
@@ -68,7 +67,7 @@ if __name__ == "__main__":
 
     log.info("Producing embeddings")
     submissions = []
-    for label in tqdm.tqdm(labels):
+    for label in labels:
         submission = [instruction, label]
         submissions.append(submission)
 

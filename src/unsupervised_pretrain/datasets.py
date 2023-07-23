@@ -140,7 +140,7 @@ class SeriesDataset(torch.utils.data.Dataset):
         if index >= self.dataset_length:
             raise StopIteration()
 
-        nugget, group_index_a, group_index_b, nugget_relative_index = self.nugget_and_groups(index)
+        nugget, group_index_a, group_index_b, nugget_relative_index = self.nugget_and_groups(index)  # yapf:disable
 
         groups = nugget.get("groups")
         blocks_tall = nugget.get("blocks_tall")

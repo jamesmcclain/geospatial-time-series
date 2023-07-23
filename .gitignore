@@ -11,3 +11,4 @@ wandb/
 *.parquet
 *.json
 *.tar
+*.npy

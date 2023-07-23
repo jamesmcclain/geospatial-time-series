@@ -138,11 +138,11 @@ class ParquetHackDataset(SeriesDataset):
 
     def __init__(self,
                  cog_dirs: List[str],
-                 dim: int = 512,
+                 size: int = 512,
                  series_length: int = 5):
 
         super().__init__(cog_dirs=cog_dirs,
-                         dim=dim,
+                         size=size,
                          series_length=series_length,
                          text_mode=True)
 

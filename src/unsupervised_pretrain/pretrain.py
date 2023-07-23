@@ -42,8 +42,8 @@ from pytorch_metric_learning import losses, miners
 from torch.utils.data import DataLoader
 
 from datasets import DigestDataset, SeriesDataset, SeriesEmbedDataset
-from models import (SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18, Hat,
-                    freeze, unfreeze)
+from models import (Hat, SeriesEfficientNetb0, SeriesMobileNetv3,
+                    SeriesResNet18, freeze, unfreeze)
 
 if __name__ == "__main__":
     # yapf: disable
@@ -75,8 +75,8 @@ if __name__ == "__main__":
     elif args.dataset == "embed-series":
         assert args.size % 64 == 0
         dataset = SeriesEmbedDataset(args.cog_dirs,
-                                size=args.size,
-                                series_length=args.series_length)
+                                     size=args.size,
+                                     series_length=args.series_length)
     elif args.dataset == "digest":
         dataset = DigestDataset(args.cog_dirs)
     dataloader = DataLoader(
@@ -113,7 +113,7 @@ if __name__ == "__main__":
 
     if args.dataset == "embed-series":
         E = 768  # Instructor-XL
-        hat = Hat(dim1 = model.embedding_dim, dim2 = E).to(device)
+        hat = Hat(dim1=model.embedding_dim, dim2=E).to(device)
 
     # Loss function, optimizer, scheduler, miner
     base_obj = losses.TripletMarginLoss().to(device)
@@ -150,11 +150,11 @@ if __name__ == "__main__":
                 embeddings_text_b = embeddings_text_b.to(device)
                 if target.shape[0] != embeddings_visual_a.shape[0]:
                     assert embeddings_visual_a.shape == embeddings_text_a.shape
-                    target = torch.ones(embeddings_visual_a.shape[0], device=device)
+                    target = torch.ones(embeddings_visual_a.shape[0], device=device)  # yapf: disable
                 loss += obj2(embeddings_visual_a, embeddings_text_a, target)
                 if target.shape[0] != embeddings_visual_b.shape[0]:
                     assert embeddings_visual_b.shape == embeddings_text_b.shape
-                    target = torch.ones(embeddings_visual_b.shape[0], device=device)
+                    target = torch.ones(embeddings_visual_b.shape[0], device=device)  # yapf: disable
                 loss += obj2(embeddings_visual_b, embeddings_text_b, target)
 
             loss.backward()

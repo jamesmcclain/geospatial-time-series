@@ -62,6 +62,7 @@ class Hat(torch.nn.Module):
     def forward(self, x):
         return self.net(x)
 
+
 class SeriesModel(torch.nn.Module):
 
     def __init__(self):
