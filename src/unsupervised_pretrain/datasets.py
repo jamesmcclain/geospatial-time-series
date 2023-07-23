@@ -32,9 +32,9 @@ import glob
 from typing import List
 
 import numpy as np
-import pyproj
 import rasterio as rio
 import torch
+from pyproj import Proj
 
 
 def split_list(lst, chunk_size):
@@ -104,10 +104,15 @@ class SeriesDataset(torch.utils.data.Dataset):
             blocks_tall = height // size
             blocks_wide = width // size
             nugget_length = blocks_tall * blocks_wide * len(groups)
+            with rio.open(cog_list[-1]) as src:
+                crs = src.crs
+            src_proj = Proj(crs)
+            latlon = src_proj.crs.axis_info[0].direction.lower() in {"north", "south"}  # yapf: disable
             nugget = {
-                "groups": groups,
                 "blocks_tall": blocks_tall,
                 "blocks_wide": blocks_wide,
+                "groups": groups,
+                "latlon": latlon,
                 "nugget_length": nugget_length,
             }
             self.nuggets.append(nugget)
@@ -154,12 +159,20 @@ class SeriesDataset(torch.utils.data.Dataset):
         tile_y = tile_relative_index % blocks_wide
         tile_x = tile_relative_index // blocks_wide
         # yapf: disable
-        w = rio.windows.Window(
-            tile_x * self.size,
-            tile_y * self.size,
-            self.size,
-            self.size,
-        )
+        if nugget.get("latlon"):
+            w = rio.windows.Window(
+                tile_y * self.size,
+                tile_x * self.size,
+                self.size,
+                self.size,
+            )
+        else:
+            w = rio.windows.Window(
+                tile_x * self.size,
+                tile_y * self.size,
+                self.size,
+                self.size,
+            )
         # yapf: disable
 
         # Return text
@@ -179,6 +192,8 @@ class SeriesDataset(torch.utils.data.Dataset):
                 with rio.open(filename_b, "r") as ds:
                     imagery_b.append(ds.read(window=w).astype(np.float32))
             imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
+
+        assert imagery_a.shape[2] != 0 and imagery_b.shape[2] != 0
 
         # Return imagery
         if not self.text_mode:
