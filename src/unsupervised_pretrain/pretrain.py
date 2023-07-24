@@ -61,10 +61,15 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, default=".", help="The directory where logs and artifacts will be deposited (default: .)")
     parser.add_argument("--pth-in", type=str, help="Optional path to a .pth file to use as a starting point for model training")
     parser.add_argument("--pth-out", type=str, default="model.pth", help="The name of the output .pth file (default: model.pth)")
+    parser.add_argument("--pth-hat-in", type=str, help="Optional path to a .pth file to use as a starting point for the hat training (\"embed-series\" only)")
+    parser.add_argument("--pth-hat-out", type=str, default="hat.pth", help="The name of the output .pth file for the hat (\"embed-series\" only, default: hat.pth)")
     parser.add_argument("--series-length", type=int, default=8, help="The number of time steps in each sample (default: 8)")
     parser.add_argument("--size", type=int, default=512, help="The tile size (default: 512)")
     # yapf: enable
     args = parser.parse_args()
+
+    if args.pth_hat_in is not None or args.pth_hat_out != "hat.pth":
+        assert args.dataset == "embed-series"
 
     # Dataset and DataLoader for training set
     if args.dataset == "series":
@@ -113,7 +118,10 @@ if __name__ == "__main__":
 
     if args.dataset == "embed-series":
         E = 768  # Instructor-XL
-        hat = Hat(dim1=model.embedding_dim, dim2=E).to(device)
+        if args.pth_hat_in is not None:
+            hat = torch.load(args.pth_hat_in, map_location=device).to(device)
+        else:
+            hat = Hat(dim1=model.embedding_dim, dim2=E).to(device)
 
     # Loss function, optimizer, scheduler, miner
     base_obj = losses.TripletMarginLoss().to(device)
@@ -148,14 +156,18 @@ if __name__ == "__main__":
                 embeddings_visual_b = hat(embeddings_visual_b)
                 embeddings_text_a = embeddings_text_a.to(device)
                 embeddings_text_b = embeddings_text_b.to(device)
-                if target.shape[0] != embeddings_visual_a.shape[0]:
+                # yapf: disable
+                combined_dim = embeddings_visual_a.shape[0] + embeddings_visual_b.shape[0]
+                if target.shape[0] != combined_dim:
                     assert embeddings_visual_a.shape == embeddings_text_a.shape
-                    target = torch.ones(embeddings_visual_a.shape[0], device=device)  # yapf: disable
-                loss += obj2(embeddings_visual_a, embeddings_text_a, target)
-                if target.shape[0] != embeddings_visual_b.shape[0]:
                     assert embeddings_visual_b.shape == embeddings_text_b.shape
-                    target = torch.ones(embeddings_visual_b.shape[0], device=device)  # yapf: disable
-                loss += obj2(embeddings_visual_b, embeddings_text_b, target)
+                    target = torch.ones(combined_dim, device=device)
+                loss += obj2(
+                    torch.cat([embeddings_visual_a, embeddings_visual_b], dim=0),
+                    torch.cat([embeddings_text_a, embeddings_text_b], dim=0),
+                    target,
+                )
+                # yapf: enable
 
             loss.backward()
             training_losses.append(loss.item())
@@ -167,9 +179,17 @@ if __name__ == "__main__":
             model_save_path = f"{args.output_dir}/{args.pth_out}"
             model_save_path = model_save_path.replace(".pth", f"-{epoch}.pth")
             torch.save(model, model_save_path)
+            if args.dataset == "embed-series":
+                hat_save_path = f"{args.output_dir}/{args.pth_hat_out}"
+                hat_save_path = hat_save_path.replace(".pth", f"-{epoch}.pth")
+                torch.save(hat, hat_save_path)
 
     # Save the model after the last epoch if output_dir is provided
     if args.output_dir is not None:
         model_save_path = f"{args.output_dir}/{args.pth_out}"
         torch.save(model, model_save_path)
         log.info(f"Model saved to {model_save_path}")
+        if args.dataset == "embed-series":
+            hat_save_path = f"{args.output_dir}/{args.pth_hat_out}"
+            torch.save(hat, hat_save_path)
+            log.info(f"Hat saved to {hat_save_path}")
