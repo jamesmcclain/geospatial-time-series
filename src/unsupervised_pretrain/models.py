@@ -57,7 +57,7 @@ class Hat(torch.nn.Module):
             torch.nn.Linear(dim1, between),
             torch.nn.ReLU(),
             torch.nn.Linear(between, dim2),
-            torch.nn.Softmax(dim=1),
+            # torch.nn.Softmax(dim=1),
         )
 
     def forward(self, x):

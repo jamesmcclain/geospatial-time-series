@@ -40,6 +40,7 @@ import torch
 import tqdm
 from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 
 from datasets import DigestDataset, SeriesDataset, SeriesEmbedDataset
 from models import (Hat, SeriesEfficientNetb0, SeriesMobileNetv3,
@@ -158,6 +159,8 @@ if __name__ == "__main__":
                 embeddings_text_a = embeddings_text_a.to(device)
                 embeddings_text_b = embeddings_text_b.to(device)
                 embeddings_text = torch.cat([embeddings_text_a, embeddings_text_b], dim=0)
+                # embeddings_text = F.softmax(embeddings_text, dim=1)
+                embeddings_text = F.normalize(embeddings_text, dim=1)
             else:
                 imagery_a, imagery_b = data
             imagery_a = imagery_a.to(device)
