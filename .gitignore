@@ -12,3 +12,4 @@ wandb/
 *.json
 *.tar
 *.npy
+**/.ipynb_checkpoints/*
