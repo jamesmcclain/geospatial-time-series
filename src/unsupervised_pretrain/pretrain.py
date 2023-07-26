@@ -38,7 +38,7 @@ import sys
 import numpy as np
 import torch
 import tqdm
-from pytorch_metric_learning import losses, miners
+from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
 
 from datasets import DigestDataset, SeriesDataset, SeriesEmbedDataset
@@ -128,61 +128,88 @@ if __name__ == "__main__":
             hat1 = Hat(dim1=model.embedding_dim, dim2=64).to(device)
             hat2 = Hat(dim1=E, dim2=64).to(device)
 
-    # Loss function, optimizer, scheduler, miner
+    # Loss function, optimizer, scheduler
     base_obj = losses.TripletMarginLoss().to(device)
-    obj = losses.SelfSupervisedLoss(base_obj).to(device)
-    # if args.dataset == "embed-series":
-    #     obj2 = torch.nn.CosineEmbeddingLoss().to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=args.lr)
-    sched = torch.optim.lr_scheduler.OneCycleLR(
-        opt,
+    obj1 = losses.SelfSupervisedLoss(base_obj).to(device)
+    opt1 = torch.optim.Adam(model.parameters(), lr=args.lr)
+    sched1 = torch.optim.lr_scheduler.OneCycleLR(
+        opt1,
         max_lr=args.lr,
         steps_per_epoch=len(dataloader),
         epochs=args.epochs)
+    if args.dataset == "embed-series":
+        obj2 = torch.nn.CosineEmbeddingLoss().to(device)
+        params = list(hat1.parameters()) + list(hat2.parameters())
+        opt2 = torch.optim.Adam(params, lr=args.lr)
+        sched2 = torch.optim.lr_scheduler.OneCycleLR(
+            opt2,
+            max_lr=args.lr,
+            steps_per_epoch=len(dataloader),
+            epochs=args.epochs)
 
-    # target = torch.ones(1, device=device)
+    target = torch.ones(args.batch_size * 2, device=device)
+
     for epoch in range(0, args.epochs):
         model.train()
         if args.dataset == "embed-series":
             hat1.train()
             hat2.train()
 
-        training_losses = []
+        training_losses1 = []
+        training_losses2 = []
         for data in tqdm.tqdm(dataloader):
 
             if args.dataset == "embed-series":
                 imagery_a, imagery_b, embeddings_text_a, embeddings_text_b = data
+                embeddings_text_a = embeddings_text_a.to(device)
+                embeddings_text_b = embeddings_text_b.to(device)
+                embeddings_text = torch.cat([embeddings_text_a, embeddings_text_b], dim=0)
             else:
                 imagery_a, imagery_b = data
+            imagery_a = imagery_a.to(device)
+            imagery_b = imagery_b.to(device)
+            imagery = torch.cat([imagery_a, imagery_b], dim=0)
 
-            opt.zero_grad()
-            embeddings_visual_a = model(imagery_a.to(device))
-            embeddings_visual_b = model(imagery_b.to(device))
-            loss = obj(embeddings_visual_a, embeddings_visual_b)
-
+            opt1.zero_grad()
             if args.dataset == "embed-series":
-                embeddings_visual_a = hat1(embeddings_visual_a)
-                embeddings_text_a = hat2(embeddings_text_a.to(device))
-                loss += obj(embeddings_visual_a, embeddings_text_a)
-                # yapf: disable
-                # combined_dim = embeddings_visual_a.shape[0] + embeddings_visual_b.shape[0]
-                # if target.shape[0] != combined_dim:
-                #     assert embeddings_visual_a.shape == embeddings_text_a.shape
-                #     assert embeddings_visual_b.shape == embeddings_text_b.shape
-                #     target = torch.ones(combined_dim, device=device)
-                # loss += obj2(
-                #     torch.cat([embeddings_visual_a, embeddings_visual_b], dim=0),
-                #     torch.cat([embeddings_text_a, embeddings_text_b], dim=0),
-                #     target,
-                # )
-                # yapf: enable
+                opt2.zero_grad()
 
-            loss.backward()
-            training_losses.append(loss.item())
-            opt.step()
-            sched.step()
-        training_losses = np.mean(training_losses)
-        log.info(f"epoch={epoch} training_loss={training_losses}")
+            # Hats
+            if args.dataset == "embed-series":
+                if target.shape[0] != imagery.shape[0]:
+                    target = torch.ones(imagery.shape[0], device=device)
+                assert imagery.shape[0] == embeddings_text.shape[0]
+                loss2 = obj2(hat1(model(imagery)), hat2(embeddings_text), target)
+                training_losses2.append(loss2.item())
+                loss2.backward()
+                opt2.step()
+                opt2.zero_grad()
+
+            # Body
+            loss1 = obj1(model(imagery_a), model(imagery_b.to(device)))
+            training_losses1.append(loss1.item())
+            loss1.backward()
+            opt1.step()
+            sched1.step()
+
+            # Hats
+            if args.dataset == "embed-series":
+                if target.shape[0] != imagery.shape[0]:
+                    target = torch.ones(imagery_a.shape[0], device=device)
+                assert imagery.shape[0] == embeddings_text.shape[0]
+                loss2 = obj2(hat1(model(imagery)), hat2(embeddings_text), target)
+                training_losses2.append(loss2.item())
+                loss2.backward()
+                opt2.step()
+                sched2.step()
+
+        training_losses1 = np.mean(training_losses1)
+        if args.dataset != "embed-series":
+            log.info(f"epoch={epoch} training_loss={training_losses1}")
+        else:
+            training_losses2 = np.mean(training_losses2)
+            log.info(f"epoch={epoch} training_loss1={training_losses1} training_loss2={training_losses2}")
+
         if args.output_dir is not None:
             model_save_path = f"{args.output_dir}/{args.pth_out}"
             model_save_path = model_save_path.replace(".pth", f"-{epoch}.pth")
