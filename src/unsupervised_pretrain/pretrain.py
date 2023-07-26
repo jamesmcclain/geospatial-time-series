@@ -176,9 +176,11 @@ if __name__ == "__main__":
                 if target.shape[0] != imagery.shape[0]:
                     target = torch.ones(imagery.shape[0], device=device)
                 assert imagery.shape[0] == embeddings_text.shape[0]
-                loss2 = obj2(hat(model(imagery)), embeddings_text, target)
+                embeddings_visual = hat(model(imagery))
+                embeddings_visual = F.normalize(embeddings_visual, dim=1)
+                loss2 = obj2(embeddings_visual, embeddings_text, target)
                 training_losses2.append(loss2.item())
-                loss2 *= 0.25
+                loss2 *= 0.50
                 loss2.backward()
                 opt2.step()
                 opt2.zero_grad()
@@ -186,7 +188,6 @@ if __name__ == "__main__":
             # Body
             loss1 = obj1(model(imagery_a), model(imagery_b.to(device)))
             training_losses1.append(loss1.item())
-            loss1 *= 0.5
             loss1.backward()
             opt1.step()
             sched1.step()
@@ -196,9 +197,11 @@ if __name__ == "__main__":
                 if target.shape[0] != imagery.shape[0]:
                     target = torch.ones(imagery_a.shape[0], device=device)
                 assert imagery.shape[0] == embeddings_text.shape[0]
-                loss2 = obj2(hat(model(imagery)), embeddings_text, target)
+                embeddings_visual = hat(model(imagery))
+                embeddings_visual = F.normalize(embeddings_visual, dim=1)
+                loss2 = obj2(embeddings_visual, embeddings_text, target)
                 training_losses2.append(loss2.item())
-                loss2 *= 0.25
+                loss2 *= 0.50
                 loss2.backward()
                 opt2.step()
                 sched2.step()
