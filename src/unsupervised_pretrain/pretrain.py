@@ -37,10 +37,10 @@ import sys
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import tqdm
 from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
 
 from datasets import DigestDataset, SeriesDataset, SeriesEmbedDataset
 from models import (Hat, SeriesEfficientNetb0, SeriesMobileNetv3,
@@ -158,7 +158,7 @@ if __name__ == "__main__":
                 imagery_a, imagery_b, embeddings_text_a, embeddings_text_b = data
                 embeddings_text_a = embeddings_text_a.to(device)
                 embeddings_text_b = embeddings_text_b.to(device)
-                embeddings_text = torch.cat([embeddings_text_a, embeddings_text_b], dim=0)
+                embeddings_text = torch.cat([embeddings_text_a, embeddings_text_b], dim=0)  # yapf: disable
                 # embeddings_text = F.softmax(embeddings_text, dim=1)
                 embeddings_text = F.normalize(embeddings_text, dim=1)
             else:
@@ -211,7 +211,7 @@ if __name__ == "__main__":
             log.info(f"epoch={epoch} training_loss={training_losses1}")
         else:
             training_losses2 = np.mean(training_losses2)
-            log.info(f"epoch={epoch} training_loss1={training_losses1} training_loss2={training_losses2}")
+            log.info(f"epoch={epoch} training_loss1={training_losses1} training_loss2={training_losses2}")  # yapf: disable
 
         if args.output_dir is not None:
             model_save_path = f"{args.output_dir}/{args.pth_out}"
