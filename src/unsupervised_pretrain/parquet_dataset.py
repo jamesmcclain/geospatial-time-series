@@ -117,7 +117,7 @@ def rows_to_text(rows, bbox):
     elif math.log(building_count) <= 4.:
         plural_noun = "numerous"
     else:
-        plural_noun = "a plethora"
+        plural_noun = "a plethora of"
 
     building_types = ", ".join(building_types)
 
