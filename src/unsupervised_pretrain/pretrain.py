@@ -38,12 +38,13 @@ import sys
 import numpy as np
 import torch
 import tqdm
-from pytorch_metric_learning import losses, miners
+from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 
-from datasets import DigestDataset, SeriesDataset
-from models import (SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18,
-                    freeze, unfreeze)
+from datasets import DigestDataset, SeriesDataset, SeriesEmbedDataset
+from models import (Hat, SeriesEfficientNetb0, SeriesMobileNetv3,
+                    SeriesResNet18, freeze, unfreeze)
 
 if __name__ == "__main__":
     # yapf: disable
@@ -52,7 +53,7 @@ if __name__ == "__main__":
     parser.add_argument("cog_dirs", nargs="+", type=str, help="Paths to the data")
     parser.add_argument("--architecture", type=str, default="resnet18", choices=["resnet18", "mobilenetv3", "efficientnetb0"], help="The model architecture to use (default: resnet18)")
     parser.add_argument("--batch-size", type=int, default=6, help="The batch size (default: 6)")
-    parser.add_argument("--dataset", type=str, default="series", choices=["series", "digest"], help="The type of data found in the data directories (default: series)")
+    parser.add_argument("--dataset", type=str, default="series", choices=["embed-series", "series", "digest"], help="The type of data found in the data directories (default: series)")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="The device to use for training (default: cuda)")
     parser.add_argument("--epochs", type=int, default=8, help="The number of epochs (default: 8)")
     parser.add_argument("--lr", type=float, default=1e-3, help="The learning rate (default: 1e-3)")
@@ -61,17 +62,27 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, default=".", help="The directory where logs and artifacts will be deposited (default: .)")
     parser.add_argument("--pth-in", type=str, help="Optional path to a .pth file to use as a starting point for model training")
     parser.add_argument("--pth-out", type=str, default="model.pth", help="The name of the output .pth file (default: model.pth)")
+    parser.add_argument("--pth-hat-in", type=str, help="Optional path to a .pth file to use as a starting point for training the first hat (\"embed-series\" only)")
+    parser.add_argument("--pth-hat-out", type=str, default="hat.pth", help="The name of the output .pth file for the first hat (\"embed-series\" only, default: hat.pth)")
     parser.add_argument("--series-length", type=int, default=8, help="The number of time steps in each sample (default: 8)")
     parser.add_argument("--size", type=int, default=512, help="The tile size (default: 512)")
     # yapf: enable
     args = parser.parse_args()
 
+    if args.pth_hat_in is not None or args.pth_hat_out != "hat.pth":
+        assert args.dataset == "embed-series"
+
     # Dataset and DataLoader for training set
     if args.dataset == "series":
         assert args.size % 64 == 0
         dataset = SeriesDataset(args.cog_dirs,
-                                dim=args.size,
+                                size=args.size,
                                 series_length=args.series_length)
+    elif args.dataset == "embed-series":
+        assert args.size % 64 == 0
+        dataset = SeriesEmbedDataset(args.cog_dirs,
+                                     size=args.size,
+                                     series_length=args.series_length)
     elif args.dataset == "digest":
         dataset = DigestDataset(args.cog_dirs)
     dataloader = DataLoader(
@@ -83,9 +94,7 @@ if __name__ == "__main__":
     )
 
     # Logging
-    logging.basicConfig(stream=sys.stderr,
-                        level=logging.INFO,
-                        format="%(asctime)-15s %(message)s")
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(asctime)-15s %(message)s")  # yapf: disable
     log = logging.getLogger()
     if args.output_dir is not None:
         fh = logging.FileHandler(f"{args.output_dir}/output.log")
@@ -108,42 +117,117 @@ if __name__ == "__main__":
         model = torch.load(args.pth_in, map_location=device).to(device)
         log.info(f"Model weights loaded from {args.pth_in}")
 
-    # Loss function, optimizer, scheduler, miner
+    if args.dataset == "embed-series":
+        E = 768  # Instructor-XL
+        if args.pth_hat_in is not None:
+            hat = torch.load(args.pth_hat_in, map_location=device).to(device)
+        else:
+            hat = Hat(dim1=model.embedding_dim, dim2=E).to(device)
+
+    # Loss function, optimizer, scheduler
     base_obj = losses.TripletMarginLoss().to(device)
-    obj = losses.SelfSupervisedLoss(base_obj).to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=args.lr)
-    sched = torch.optim.lr_scheduler.OneCycleLR(
-        opt,
+    obj1 = losses.SelfSupervisedLoss(base_obj).to(device)
+    opt1 = torch.optim.Adam(model.parameters(), lr=args.lr)
+    sched1 = torch.optim.lr_scheduler.OneCycleLR(
+        opt1,
         max_lr=args.lr,
         steps_per_epoch=len(dataloader),
         epochs=args.epochs)
-    # miner = miners.BatchEasyHardMiner(pos_strategy="semihard",
-    #                                   neg_strategy="easy")
+    if args.dataset == "embed-series":
+        obj2 = torch.nn.CosineEmbeddingLoss().to(device)
+        params = list(hat.parameters()) + list(model.parameters())
+        opt2 = torch.optim.Adam(params, lr=args.lr)
+        sched2 = torch.optim.lr_scheduler.OneCycleLR(
+            opt2,
+            max_lr=args.lr,
+            steps_per_epoch=len(dataloader),
+            epochs=args.epochs)
 
-    model.train()
+    target = torch.ones(args.batch_size * 2, device=device)
+
     for epoch in range(0, args.epochs):
-        training_losses = []
+        model.train()
+        if args.dataset == "embed-series":
+            hat.train()
+
+        training_losses1 = []
+        training_losses2 = []
         for data in tqdm.tqdm(dataloader):
-            imagery_a, imagery_b = data
-            opt.zero_grad()
-            embeddings_a = model(imagery_a.to(device))
-            embeddings_b = model(imagery_b.to(device))
-            # good_pairs = miner(embeddings_a, embeddings_b).to(device)
-            # loss = obj(embeddings_a, embeddings_b, good_pairs)
-            loss = obj(embeddings_a, embeddings_b)
-            loss.backward()
-            training_losses.append(loss.item())
-            opt.step()
-            sched.step()
-        training_losses = np.mean(training_losses)
-        log.info(f"epoch={epoch} training_loss={training_losses}")
+
+            if args.dataset == "embed-series":
+                imagery_a, imagery_b, embeddings_text_a, embeddings_text_b = data
+                embeddings_text_a = embeddings_text_a.to(device)
+                embeddings_text_b = embeddings_text_b.to(device)
+                embeddings_text = torch.cat([embeddings_text_a, embeddings_text_b], dim=0)
+                # embeddings_text = F.softmax(embeddings_text, dim=1)
+                embeddings_text = F.normalize(embeddings_text, dim=1)
+            else:
+                imagery_a, imagery_b = data
+            imagery_a = imagery_a.to(device)
+            imagery_b = imagery_b.to(device)
+            imagery = torch.cat([imagery_a, imagery_b], dim=0)
+
+            opt1.zero_grad()
+            if args.dataset == "embed-series":
+                opt2.zero_grad()
+
+            # Hat and body
+            if args.dataset == "embed-series":
+                if target.shape[0] != imagery.shape[0]:
+                    target = torch.ones(imagery.shape[0], device=device)
+                assert imagery.shape[0] == embeddings_text.shape[0]
+                embeddings_visual = hat(model(imagery))
+                embeddings_visual = F.normalize(embeddings_visual, dim=1)
+                loss2 = obj2(embeddings_visual, embeddings_text, target)
+                training_losses2.append(loss2.item())
+                loss2 *= 0.50
+                loss2.backward()
+                opt2.step()
+                opt2.zero_grad()
+
+            # Body
+            loss1 = obj1(model(imagery_a), model(imagery_b.to(device)))
+            training_losses1.append(loss1.item())
+            loss1.backward()
+            opt1.step()
+            sched1.step()
+
+            # Hat and body
+            if args.dataset == "embed-series":
+                if target.shape[0] != imagery.shape[0]:
+                    target = torch.ones(imagery_a.shape[0], device=device)
+                assert imagery.shape[0] == embeddings_text.shape[0]
+                embeddings_visual = hat(model(imagery))
+                embeddings_visual = F.normalize(embeddings_visual, dim=1)
+                loss2 = obj2(embeddings_visual, embeddings_text, target)
+                training_losses2.append(loss2.item())
+                loss2 *= 0.50
+                loss2.backward()
+                opt2.step()
+                sched2.step()
+
+        training_losses1 = np.mean(training_losses1)
+        if args.dataset != "embed-series":
+            log.info(f"epoch={epoch} training_loss={training_losses1}")
+        else:
+            training_losses2 = np.mean(training_losses2)
+            log.info(f"epoch={epoch} training_loss1={training_losses1} training_loss2={training_losses2}")
+
         if args.output_dir is not None:
             model_save_path = f"{args.output_dir}/{args.pth_out}"
             model_save_path = model_save_path.replace(".pth", f"-{epoch}.pth")
             torch.save(model, model_save_path)
+            if args.dataset == "embed-series":
+                hat_save_path = f"{args.output_dir}/{args.pth_hat_out}"
+                hat_save_path = hat_save_path.replace(".pth", f"-{epoch}.pth")
+                torch.save(hat, hat_save_path)
 
     # Save the model after the last epoch if output_dir is provided
     if args.output_dir is not None:
         model_save_path = f"{args.output_dir}/{args.pth_out}"
         torch.save(model, model_save_path)
         log.info(f"Model saved to {model_save_path}")
+        if args.dataset == "embed-series":
+            hat_save_path = f"{args.output_dir}/{args.pth_hat_out}"
+            torch.save(hat, hat_save_path)
+            log.info(f"Hats saved to {hat_save_path}")

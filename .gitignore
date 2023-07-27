@@ -9,3 +9,7 @@ wandb/
 *.tif
 *.ovr
 *.parquet
+*.json
+*.tar
+*.npy
+**/.ipynb_checkpoints/*

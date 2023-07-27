@@ -1,5 +1,35 @@
 #!/usr/bin/env python3
 
+# BSD 3-Clause License
+#
+# Copyright (c) 2023
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 import argparse
 import glob
 import logging
@@ -25,8 +55,12 @@ def compute_wgs84_bounding_box(geotiff_file):
     target_proj = Proj("EPSG:4326")
     transformer = Transformer.from_proj(src_proj, target_proj)
 
-    minlon, minlat = transformer.transform(bounds.left, bounds.bottom)
-    maxlon, maxlat = transformer.transform(bounds.right, bounds.top)
+    if src_proj.crs.axis_info[0].direction.lower() in {"north", "south"}:
+        minlat, minlon = transformer.transform(bounds.left, bounds.bottom)
+        maxlat, maxlon = transformer.transform(bounds.right, bounds.top)
+    else:
+        minlon, minlat = transformer.transform(bounds.left, bounds.bottom)
+        maxlon, maxlat = transformer.transform(bounds.right, bounds.top)
 
     wgs84_bbox = box(minlat, minlon, maxlat, maxlon)
 
@@ -38,6 +72,7 @@ def dict_or_none(stuff):
         return dict(stuff)
     except:
         return dict()
+
 
 if __name__ == "__main__":
     # yapf: disable
@@ -81,4 +116,4 @@ if __name__ == "__main__":
         nugget = list(filter(lambda s: len(s) > 0, geotiff_dir.split("/")))[-1]
 
         inter = gdf[gdf.intersects(bbox)]
-        inter[["wkt", "tags"]].to_parquet(f"{args.output_dir}/{nugget}.parquet")
+        inter[["wkt", "tags"]].to_parquet(f"{args.output_dir}/{nugget}.parquet")  # yapf: disable
