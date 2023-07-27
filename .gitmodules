@@ -1,0 +1,3 @@
+[submodule "src/unsupervised_pretrain/jupyter"]
+	path = src/unsupervised_pretrain/jupyter
+	url = git@github.com:jamesmcclain/geospatial-time-series-notebooks.git
