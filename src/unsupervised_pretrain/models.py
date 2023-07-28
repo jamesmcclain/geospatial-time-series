@@ -57,8 +57,7 @@ class OrthogonalLoss(torch.nn.Module):
     def forward(self, x, y):
         assert x.shape[0] == y.shape[0]
         result = torch.einsum("ik,jk->ij", x, y)
-        return self.mse(result, torch.eye(result.shape[0],
-                                          device=result.device))
+        return self.mse(result, torch.eye(result.shape[0], device=result.device))  # yapf: disable
 
 
 class Hat(torch.nn.Module):
@@ -69,8 +68,11 @@ class Hat(torch.nn.Module):
         self.net = torch.nn.Sequential(
             torch.nn.Linear(dim1, between),
             torch.nn.ReLU(),
+            torch.nn.Dropout(0.2),
+            torch.nn.Linear(between, between),
+            torch.nn.ReLU(),
+            torch.nn.BatchNorm1d(between),
             torch.nn.Linear(between, dim2),
-            # torch.nn.Softmax(dim=1),
         )
 
     def forward(self, x):

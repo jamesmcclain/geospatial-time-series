@@ -62,14 +62,18 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, default=".", help="The directory where logs and artifacts will be deposited (default: .)")
     parser.add_argument("--pth-in", type=str, help="Optional path to a .pth file to use as a starting point for model training")
     parser.add_argument("--pth-out", type=str, default="model.pth", help="The name of the output .pth file (default: model.pth)")
-    parser.add_argument("--pth-hat-in", type=str, help="Optional path to a .pth file to use as a starting point for training the first hat (\"embed-series\" only)")
-    parser.add_argument("--pth-hat-out", type=str, default="hat.pth", help="The name of the output .pth file for the first hat (\"embed-series\" only, default: hat.pth)")
+    parser.add_argument("--pth-hat1-in", type=str, help="Optional path to a .pth file to use as a starting point for training the first hat1 (\"embed-series\" only)")
+    parser.add_argument("--pth-hat1-out", type=str, default="hat1.pth", help="The name of the output .pth file for the first hat (\"embed-series\" only, default: hat1.pth)")
+    parser.add_argument("--pth-hat2-in", type=str, help="Optional path to a .pth file to use as a starting point for training the first hat2 (\"embed-series\" only)")
+    parser.add_argument("--pth-hat2-out", type=str, default="hat2.pth", help="The name of the output .pth file for the second hat (\"embed-series\" only, default: hat2.pth)")
     parser.add_argument("--series-length", type=int, default=8, help="The number of time steps in each sample (default: 8)")
     parser.add_argument("--size", type=int, default=512, help="The tile size (default: 512)")
     # yapf: enable
     args = parser.parse_args()
 
-    if args.pth_hat_in is not None or args.pth_hat_out != "hat.pth":
+    if args.pth_hat1_in is not None or args.pth_hat1_out != "hat1.pth":
+        assert args.dataset == "embed-series"
+    if args.pth_hat2_in is not None or args.pth_hat2_out != "hat2.pth":
         assert args.dataset == "embed-series"
 
     # Dataset and DataLoader for training set
@@ -119,10 +123,16 @@ if __name__ == "__main__":
 
     if args.dataset == "embed-series":
         E = 768  # Instructor-XL
-        if args.pth_hat_in is not None:
-            hat = torch.load(args.pth_hat_in, map_location=device).to(device)
+
+        if args.pth_hat1_in is not None:
+            hat1 = torch.load(args.pth_hat1_in, map_location=device).to(device)
         else:
-            hat = Hat(dim1=model.embedding_dim, dim2=E).to(device)
+            hat1 = Hat(dim1=model.embedding_dim, dim2=64).to(device)
+
+        if args.pth_hat2_in is not None:
+            hat2 = torch.load(args.pth_hat2_in, map_location=device).to(device)
+        else:
+            hat2 = Hat(dim1=E, dim2=64).to(device)
 
     # Loss function, optimizer, scheduler
     base_obj = losses.TripletMarginLoss().to(device)
@@ -135,7 +145,7 @@ if __name__ == "__main__":
         epochs=args.epochs)
     if args.dataset == "embed-series":
         obj2 = OrthogonalLoss().to(device)
-        params = list(hat.parameters()) + list(model.parameters())
+        params = list(hat1.parameters()) + list(hat2.parameters()) + list(model.parameters())  # yapf: disable
         opt2 = torch.optim.Adam(params, lr=args.lr)
         sched2 = torch.optim.lr_scheduler.OneCycleLR(
             opt2,
@@ -146,7 +156,8 @@ if __name__ == "__main__":
     for epoch in range(0, args.epochs):
         model.train()
         if args.dataset == "embed-series":
-            hat.train()
+            hat1.train()
+            hat2.train()
 
         training_losses1 = []
         training_losses2 = []
@@ -168,9 +179,11 @@ if __name__ == "__main__":
 
             # Hat and body
             if args.dataset == "embed-series":
-                embeddings_visual = hat(model(imagery_a))
-                embeddings_visual = F.normalize(embeddings_visual, dim=1)
-                loss2 = obj2(embeddings_visual, embeddings_text)
+                embeddings_v2t = hat1(model(imagery_a))
+                embeddings_v2t = F.normalize(embeddings_v2t, dim=1)
+                embeddings_t2t = hat2(embeddings_text)
+                embeddings_t2t = F.normalize(embeddings_t2t, dim=1)
+                loss2 = obj2(embeddings_v2t, embeddings_t2t)
                 training_losses2.append(loss2.item())
                 loss2 *= 0.50
                 loss2.backward()
@@ -186,9 +199,11 @@ if __name__ == "__main__":
 
             # Hat and body
             if args.dataset == "embed-series":
-                embeddings_visual = hat(model(imagery_b))
-                embeddings_visual = F.normalize(embeddings_visual, dim=1)
-                loss2 = obj2(embeddings_visual, embeddings_text)
+                embeddings_v2t = hat1(model(imagery_b))
+                embeddings_v2t = F.normalize(embeddings_v2t, dim=1)
+                embeddings_t2t = hat2(embeddings_text)
+                embeddings_t2t = F.normalize(embeddings_t2t, dim=1)
+                loss2 = obj2(embeddings_v2t, embeddings_t2t)
                 training_losses2.append(loss2.item())
                 loss2 *= 0.50
                 loss2.backward()
@@ -207,9 +222,12 @@ if __name__ == "__main__":
             model_save_path = model_save_path.replace(".pth", f"-{epoch}.pth")
             torch.save(model, model_save_path)
             if args.dataset == "embed-series":
-                hat_save_path = f"{args.output_dir}/{args.pth_hat_out}"
-                hat_save_path = hat_save_path.replace(".pth", f"-{epoch}.pth")
-                torch.save(hat, hat_save_path)
+                hat1_save_path = f"{args.output_dir}/{args.pth_hat1_out}"
+                hat1_save_path = hat1_save_path.replace(".pth", f"-{epoch}.pth")  # yapf: disable
+                torch.save(hat1, hat1_save_path)
+                hat2_save_path = f"{args.output_dir}/{args.pth_hat2_out}"
+                hat2_save_path = hat2_save_path.replace(".pth", f"-{epoch}.pth")  # yapf: disable
+                torch.save(hat2, hat2_save_path)
 
     # Save the model after the last epoch if output_dir is provided
     if args.output_dir is not None:
@@ -217,6 +235,8 @@ if __name__ == "__main__":
         torch.save(model, model_save_path)
         log.info(f"Model saved to {model_save_path}")
         if args.dataset == "embed-series":
-            hat_save_path = f"{args.output_dir}/{args.pth_hat_out}"
-            torch.save(hat, hat_save_path)
-            log.info(f"Hats saved to {hat_save_path}")
+            hat1_save_path = f"{args.output_dir}/{args.pth_hat1_out}"
+            torch.save(hat1, hat1_save_path)
+            hat2_save_path = f"{args.output_dir}/{args.pth_hat2_out}"
+            torch.save(hat2, hat2_save_path)
+            log.info(f"Hats saved to {hat1_save_path} and {hat2_save_path}")
