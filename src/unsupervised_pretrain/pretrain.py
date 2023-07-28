@@ -37,14 +37,14 @@ import sys
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import tqdm
 from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
 
 from datasets import DigestDataset, SeriesDataset, SeriesEmbedDataset
-from models import (Hat, SeriesEfficientNetb0, SeriesMobileNetv3,
-                    SeriesResNet18, freeze, unfreeze)
+from models import (Hat, OrthogonalLoss, SeriesEfficientNetb0,
+                    SeriesMobileNetv3, SeriesResNet18, freeze, unfreeze)
 
 if __name__ == "__main__":
     # yapf: disable
@@ -52,13 +52,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pretrain a model using a bunch unlabeled Sentinel-2 time series")
     parser.add_argument("cog_dirs", nargs="+", type=str, help="Paths to the data")
     parser.add_argument("--architecture", type=str, default="resnet18", choices=["resnet18", "mobilenetv3", "efficientnetb0"], help="The model architecture to use (default: resnet18)")
-    parser.add_argument("--batch-size", type=int, default=6, help="The batch size (default: 6)")
-    parser.add_argument("--dataset", type=str, default="series", choices=["embed-series", "series", "digest"], help="The type of data found in the data directories (default: series)")
+    parser.add_argument("--batch-size", type=int, default=7, help="The batch size (default: 7)")
+    parser.add_argument("--dataset", type=str, default="embed-series", choices=["embed-series", "series", "digest"], help="The type of data found in the data directories (default: series)")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="The device to use for training (default: cuda)")
     parser.add_argument("--epochs", type=int, default=8, help="The number of epochs (default: 8)")
-    parser.add_argument("--lr", type=float, default=1e-3, help="The learning rate (default: 1e-3)")
+    parser.add_argument("--lr", type=float, default=1e-4, help="The learning rate (default: 1e-4)")
     parser.add_argument('--no-pretrained', action='store_false', dest='pretrained', default=True, help='Whether to start from pretrained weights (default: True)')
-    parser.add_argument("--num-workers", type=int, default=2, help="Number of worker processes for the DataLoader (default: 2)")
+    parser.add_argument("--num-workers", type=int, default=3, help="Number of worker processes for the DataLoader (default: 3)")
     parser.add_argument("--output-dir", type=str, default=".", help="The directory where logs and artifacts will be deposited (default: .)")
     parser.add_argument("--pth-in", type=str, help="Optional path to a .pth file to use as a starting point for model training")
     parser.add_argument("--pth-out", type=str, default="model.pth", help="The name of the output .pth file (default: model.pth)")
@@ -134,7 +134,7 @@ if __name__ == "__main__":
         steps_per_epoch=len(dataloader),
         epochs=args.epochs)
     if args.dataset == "embed-series":
-        obj2 = torch.nn.CosineEmbeddingLoss().to(device)
+        obj2 = OrthogonalLoss().to(device)
         params = list(hat.parameters()) + list(model.parameters())
         opt2 = torch.optim.Adam(params, lr=args.lr)
         sched2 = torch.optim.lr_scheduler.OneCycleLR(
@@ -142,8 +142,6 @@ if __name__ == "__main__":
             max_lr=args.lr,
             steps_per_epoch=len(dataloader),
             epochs=args.epochs)
-
-    target = torch.ones(args.batch_size * 2, device=device)
 
     for epoch in range(0, args.epochs):
         model.train()
@@ -155,17 +153,14 @@ if __name__ == "__main__":
         for data in tqdm.tqdm(dataloader):
 
             if args.dataset == "embed-series":
-                imagery_a, imagery_b, embeddings_text_a, embeddings_text_b = data
-                embeddings_text_a = embeddings_text_a.to(device)
-                embeddings_text_b = embeddings_text_b.to(device)
-                embeddings_text = torch.cat([embeddings_text_a, embeddings_text_b], dim=0)
+                imagery_a, imagery_b, embeddings_text = data
+                embeddings_text = embeddings_text.to(device)
                 # embeddings_text = F.softmax(embeddings_text, dim=1)
                 embeddings_text = F.normalize(embeddings_text, dim=1)
             else:
                 imagery_a, imagery_b = data
             imagery_a = imagery_a.to(device)
             imagery_b = imagery_b.to(device)
-            imagery = torch.cat([imagery_a, imagery_b], dim=0)
 
             opt1.zero_grad()
             if args.dataset == "embed-series":
@@ -173,12 +168,9 @@ if __name__ == "__main__":
 
             # Hat and body
             if args.dataset == "embed-series":
-                if target.shape[0] != imagery.shape[0]:
-                    target = torch.ones(imagery.shape[0], device=device)
-                assert imagery.shape[0] == embeddings_text.shape[0]
-                embeddings_visual = hat(model(imagery))
+                embeddings_visual = hat(model(imagery_a))
                 embeddings_visual = F.normalize(embeddings_visual, dim=1)
-                loss2 = obj2(embeddings_visual, embeddings_text, target)
+                loss2 = obj2(embeddings_visual, embeddings_text)
                 training_losses2.append(loss2.item())
                 loss2 *= 0.50
                 loss2.backward()
@@ -194,12 +186,9 @@ if __name__ == "__main__":
 
             # Hat and body
             if args.dataset == "embed-series":
-                if target.shape[0] != imagery.shape[0]:
-                    target = torch.ones(imagery_a.shape[0], device=device)
-                assert imagery.shape[0] == embeddings_text.shape[0]
-                embeddings_visual = hat(model(imagery))
+                embeddings_visual = hat(model(imagery_b))
                 embeddings_visual = F.normalize(embeddings_visual, dim=1)
-                loss2 = obj2(embeddings_visual, embeddings_text, target)
+                loss2 = obj2(embeddings_visual, embeddings_text)
                 training_losses2.append(loss2.item())
                 loss2 *= 0.50
                 loss2.backward()
@@ -211,7 +200,7 @@ if __name__ == "__main__":
             log.info(f"epoch={epoch} training_loss={training_losses1}")
         else:
             training_losses2 = np.mean(training_losses2)
-            log.info(f"epoch={epoch} training_loss1={training_losses1} training_loss2={training_losses2}")
+            log.info(f"epoch={epoch} training_loss1={training_losses1} training_loss2={training_losses2}")  # yapf: disable
 
         if args.output_dir is not None:
             model_save_path = f"{args.output_dir}/{args.pth_out}"

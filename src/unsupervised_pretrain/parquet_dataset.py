@@ -136,15 +136,17 @@ def rows_to_text(rows, bbox):
 
 class ParquetHackDataset(SeriesDataset):
 
-    def __init__(self,
-                 cog_dirs: List[str],
-                 size: int = 512,
-                 series_length: int = 5):
+    def __init__(
+        self,
+        cog_dirs: List[str],
+        size: int = 512,
+    ):
 
-        super().__init__(cog_dirs=cog_dirs,
-                         size=size,
-                         series_length=series_length,
-                         text_mode=True)
+        super().__init__(
+            cog_dirs=cog_dirs,
+            size=size,
+            text_mode=True,
+        )
 
         def create_pixel_to_wgs84_transformer(geotiff_file):
             with rio.open(geotiff_file) as src:
@@ -163,8 +165,7 @@ class ParquetHackDataset(SeriesDataset):
             return pixel_to_wgs84
 
         for idx, cog_dir in enumerate(cog_dirs):
-            parquet_files = glob.glob(f"{cog_dir}/**/*.parquet",
-                                      recursive=True)
+            parquet_files = glob.glob(f"{cog_dir}/**/*.parquet", recursive=True)  # yapf: disable
             dfs = []
             for parquet_file in parquet_files:
                 df = pd.read_parquet(parquet_files)[["wkt", "tags"]]
@@ -174,20 +175,27 @@ class ParquetHackDataset(SeriesDataset):
             df = pd.concat(dfs)
             gdf = gpd.GeoDataFrame(df)
 
-            cog = self.nuggets[idx].get("groups")[0][0]
+            cog = self.cog_dirs[idx].get("groups")[0][0]
             pixel_to_wgs84 = create_pixel_to_wgs84_transformer(cog)
-            self.nuggets[idx].update({
+            self.cog_dirs[idx].update({
                 "gdf": gdf,
                 "pixel_to_wgs84": pixel_to_wgs84
             })
+
+        # These datasets are only associated with a single tile
+        self.cog_dirs = self.cog_dirs[0:1]  # One nugget
+        self.cog_dirs[0]["groups"] = self.cog_dirs[0].get("groups")[0:1]  # yapf: disable One group
+        self.cog_dirs[0]["groups"][0] = self.cog_dirs[0].get("groups")[0][0:1]  # yapf: disable One tile
+        blocks_tall = self.cog_dirs[0].get("blocks_tall")
+        blocks_wide = self.cog_dirs[0].get("blocks_wide")
+        self.dataset_length = blocks_tall * blocks_wide
 
     def __getitem__(self, index):
         w, nugget = super().__getitem__(index)
 
         pixel_to_wgs84 = nugget.get("pixel_to_wgs84")
         lon_min, lat_min = pixel_to_wgs84(w.col_off, w.row_off)
-        lon_max, lat_max = pixel_to_wgs84(w.col_off + w.width,
-                                          w.row_off + w.height)
+        lon_max, lat_max = pixel_to_wgs84(w.col_off + w.width, w.row_off + w.height)  # yapf: disable
         bbox = box(lon_min, lat_min, lon_max, lat_max)
         gdf = nugget.get("gdf")
         intersections = gdf[gdf.intersects(bbox)].copy()

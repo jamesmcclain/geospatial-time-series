@@ -48,6 +48,19 @@ def unfreeze(m: torch.nn.Module) -> torch.nn.Module:
         p.requires_grad = True
 
 
+class OrthogonalLoss(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.mse = torch.nn.MSELoss()
+
+    def forward(self, x, y):
+        assert x.shape[0] == y.shape[0]
+        result = torch.einsum("ik,jk->ij", x, y)
+        return self.mse(result, torch.eye(result.shape[0],
+                                          device=result.device))
+
+
 class Hat(torch.nn.Module):
 
     def __init__(self, dim1, dim2):

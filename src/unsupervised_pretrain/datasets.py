@@ -28,6 +28,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import copy
 import glob
 from typing import List
 
@@ -63,12 +64,12 @@ class DigestDataset(torch.utils.data.Dataset):
         this_data = torch.load(this_pt)
 
         pt_dir, pt_filename = this_pt.rsplit("/", 1)
-        nugget, group, y, x_rest = pt_filename.split("-")
+        cog_dir, group, y, x_rest = pt_filename.split("-")
         group = int(group)
         try:
-            that_data = torch.load(f"{pt_dir}/{nugget}-{group+1}-{y}-{x_rest}")
+            that_data = torch.load(f"{pt_dir}/{cog_dir}-{group+1}-{y}-{x_rest}")  # yapf: disable
         except:
-            that_data = torch.load(f"{pt_dir}/{nugget}-0-{y}-{x_rest}")
+            that_data = torch.load(f"{pt_dir}/{cog_dir}-0-{y}-{x_rest}")
 
         return (this_data, that_data)
 
@@ -83,93 +84,99 @@ class SeriesDataset(torch.utils.data.Dataset):
         super().__init__()
         self.size = size
         self.dataset_length = 0
-        self.nuggets = []
+        self.cog_dirs = []
         self.text_mode = text_mode
 
         for cog_dir in sorted(cog_dirs):
+
+            # Get entire file list
             cog_list = sorted(glob.glob(f"{cog_dir}/**/cog.tif", recursive=True))  # yapf: disable
             cog_list.sort()
+
+            # Check that all files have the same dimensions
             with rio.open(cog_list[0], "r") as ds:
                 height = ds.height
                 width = ds.width
+                crs = ds.crs
             for cog in cog_list[1:]:
                 with rio.open(cog, "r") as ds:
                     assert height == ds.height
                     assert width == ds.width
+                    assert crs == ds.crs
+
+            # Make the file list length a multipel of the series length
             rest = series_length - (len(cog_list) % series_length)
             if rest != 0:
                 cog_list = cog_list + cog_list[:rest]
             assert len(cog_list) % series_length == 0
+
+            # Geometry
             groups = split_list(cog_list, series_length)
             blocks_tall = height // size
             blocks_wide = width // size
-            nugget_length = blocks_tall * blocks_wide * len(groups)
-            with rio.open(cog_list[-1]) as src:
-                crs = src.crs
+            cog_dir_length = blocks_tall * blocks_wide * len(groups)
+
+            # Orientation
             src_proj = Proj(crs)
             latlon = src_proj.crs.axis_info[0].direction.lower() in {"north", "south"}  # yapf: disable
-            nugget = {
+
+            _cog_dir = {
                 "blocks_tall": blocks_tall,
                 "blocks_wide": blocks_wide,
                 "groups": groups,
                 "latlon": latlon,
-                "nugget_length": nugget_length,
+                "cog_dir_length": cog_dir_length,
             }
-            self.nuggets.append(nugget)
-            self.dataset_length += nugget_length
+            self.cog_dirs.append(copy.copy(_cog_dir))
+            self.dataset_length += cog_dir_length
 
     def __len__(self):
         return self.dataset_length
 
-    def nugget_and_groups(self, index):
+    def cog_dir_and_groups(self, index):
 
-        # Get the nugget
-        nugget_start_index = 0
-        for current_nugget, nugget in enumerate(self.nuggets):
-            nugget_length = nugget.get("nugget_length")
-            if index - nugget_start_index < nugget_length:
+        # Get the cog_dir
+        cog_dir_start_index = 0
+        for current_cog_dir, cog_dir in enumerate(self.cog_dirs):
+            cog_dir_length = cog_dir.get("cog_dir_length")
+            if index - cog_dir_start_index < cog_dir_length:
                 break
-            nugget_start_index += nugget_length
+            cog_dir_start_index += cog_dir_length
 
-        groups = nugget.get("groups")
+        cog_dir_relative_index = index - cog_dir_start_index  # Index within cog_dir
 
-        nugget_relative_index = index - nugget_start_index  # Index within nugget
-
-        # Get the groups
-        group_index_a = (nugget_relative_index + 0) % len(groups)
-        group_index_b = (nugget_relative_index + 1) % len(groups)
-
-        return (nugget, group_index_a, group_index_b, nugget_relative_index)
+        return (cog_dir, cog_dir_relative_index)
 
     def __getitem__(self, index):
         if index >= self.dataset_length:
             raise StopIteration()
 
-        nugget, group_index_a, group_index_b, nugget_relative_index = self.nugget_and_groups(index)  # yapf:disable
-
-        groups = nugget.get("groups")
-        blocks_tall = nugget.get("blocks_tall")
-        blocks_wide = nugget.get("blocks_wide")
+        cog_dir, cog_dir_relative_index = self.cog_dir_and_groups(index)  # yapf:disable
+        groups = cog_dir.get("groups")
+        group_index_a = (cog_dir_relative_index + 0) % len(groups)
+        group_index_b = (cog_dir_relative_index + 1) % len(groups)
+        blocks_tall = cog_dir.get("blocks_tall")
+        blocks_wide = cog_dir.get("blocks_wide")
 
         group_a = groups[group_index_a]
         group_b = groups[group_index_b]
 
         # Calculate the window
-        tile_relative_index = nugget_relative_index // len(groups)  # yapf:disable Index within tile
-        tile_y = tile_relative_index % blocks_wide
-        tile_x = tile_relative_index // blocks_wide
+        group_relative_index = cog_dir_relative_index // len(groups)  # yapf:disable Index within the group
+        group_y = group_relative_index % blocks_wide
+        group_x = group_relative_index // blocks_wide
         # yapf: disable
-        if nugget.get("latlon"):
+        if cog_dir.get("latlon"):
             w = rio.windows.Window(
-                tile_y * self.size,
-                tile_x * self.size,
+                group_y * self.size,
+                group_x * self.size,
                 self.size,
                 self.size,
             )
         else:
             w = rio.windows.Window(
-                tile_x * self.size,
-                tile_y * self.size,
+                group_x * self.size,
+                group_y * self.size,
                 self.size,
                 self.size,
             )
@@ -177,7 +184,7 @@ class SeriesDataset(torch.utils.data.Dataset):
 
         # Return text
         if self.text_mode:
-            return (w, nugget)
+            return (w, cog_dir)
 
         # Read the imagery
         imagery_a = []
@@ -186,20 +193,15 @@ class SeriesDataset(torch.utils.data.Dataset):
                 imagery_a.append(ds.read(window=w).astype(np.float32))
         imagery_a = torch.from_numpy(np.stack(imagery_a, axis=0))
 
-        if not self.text_mode:
-            imagery_b = []
-            for filename_b in group_b:
-                with rio.open(filename_b, "r") as ds:
-                    imagery_b.append(ds.read(window=w).astype(np.float32))
-            imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
+        imagery_b = []
+        for filename_b in group_b:
+            with rio.open(filename_b, "r") as ds:
+                imagery_b.append(ds.read(window=w).astype(np.float32))
+        imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
 
         assert imagery_a.shape[2] != 0 and imagery_b.shape[2] != 0
 
-        # Return imagery
-        if not self.text_mode:
-            return (imagery_a, imagery_b)
-        else:
-            raise NotImplemented()
+        return (imagery_a, imagery_b)
 
 class SeriesEmbedDataset(SeriesDataset):
 
@@ -208,27 +210,34 @@ class SeriesEmbedDataset(SeriesDataset):
                  size: int = 512,
                  series_length: int = 5):
 
+        cog_dirs = sorted(cog_dirs)
+
         super().__init__(
             cog_dirs = cog_dirs,
             size = size,
             series_length = series_length
         )
 
-        for cog_dir, nugget in zip(cog_dirs, self.nuggets):
+        for cog_dir, _cog_dir in zip(cog_dirs, self.cog_dirs):
             cog_dir_parts = cog_dir.split("/")
             while len(cog_dir_parts[-1]) == 0:
                 cog_dir_parts = cog_dir_parts[:-1]
-            embedding_filename = f"{cog_dir_parts[-1]}-{size}-{series_length}.npy"
+            embedding_filename = f"{cog_dir_parts[-1]}-{size}.npy"
             embedding_filename = f"{cog_dir}/**/{embedding_filename}"
             embedding_filename = glob.glob(embedding_filename, recursive=True)[-1]
-            nugget["embeddings"] = np.load(embedding_filename)
+            _cog_dir["embeddings"] = np.load(embedding_filename)
+            blocks_tall = _cog_dir.get("blocks_tall")
+            blocks_wide = _cog_dir.get("blocks_wide")
+            blocks = blocks_tall * blocks_wide
+            assert blocks == _cog_dir.get("embeddings").shape[0]
 
 
     def __getitem__(self, index):
 
-        nugget, group_index_a, group_index_b, _ = self.nugget_and_groups(index)
+        cog_dir, cog_dir_relative_index = self.cog_dir_and_groups(index)
         imagery_a, imagery_b = super().__getitem__(index)
-        embedding_a = nugget.get("embeddings")[group_index_a]
-        embedding_b = nugget.get("embeddings")[group_index_b]
+        len_groups = len(cog_dir.get("groups"))
+        group_relative_index = cog_dir_relative_index // len_groups
+        embedding = cog_dir.get("embeddings")[group_relative_index]
 
-        return (imagery_a, imagery_b, embedding_a, embedding_b)
+        return (imagery_a, imagery_b, embedding)

@@ -42,9 +42,8 @@ from parquet_dataset import ParquetHackDataset
 if __name__ == "__main__":
     # yapf: disable
     parser = argparse.ArgumentParser()
-    parser.add_argument("cog_dirs", nargs="+", type=str, help="Paths to the data")
+    parser.add_argument("cog_dir", type=str, help="Path to the data")
     parser.add_argument("--output-json", type=str, required=False, default="./labels.json", help="Where to write the labels")
-    parser.add_argument("--series-length", type=int, required=False, default=8, help="The series length (default 8)")
     parser.add_argument("--size", type=int, required=False, default=512, help="The chip size (default 512)")
     args = parser.parse_args()
     # yapf: enable
@@ -54,9 +53,7 @@ if __name__ == "__main__":
     log = logging.getLogger()
     # yapf: enable
 
-    ds = ParquetHackDataset(args.cog_dirs,
-                            size=args.size,
-                            series_length=args.series_length)
+    ds = ParquetHackDataset([args.cog_dir], size=args.size)
 
     log.info(f"The dataset is of size {len(ds)}")
     labels = []
