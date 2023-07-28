@@ -43,8 +43,8 @@ from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
 
 from datasets import DigestDataset, SeriesDataset, SeriesEmbedDataset
-from models import (Hat, SeriesEfficientNetb0, SeriesMobileNetv3,
-                    SeriesResNet18, freeze, unfreeze)
+from models import (Hat, OrthogonalLoss, SeriesEfficientNetb0,
+                    SeriesMobileNetv3, SeriesResNet18, freeze, unfreeze)
 
 if __name__ == "__main__":
     # yapf: disable
@@ -134,7 +134,7 @@ if __name__ == "__main__":
         steps_per_epoch=len(dataloader),
         epochs=args.epochs)
     if args.dataset == "embed-series":
-        obj2 = torch.nn.CosineEmbeddingLoss().to(device)
+        obj2 = OrthogonalLoss().to(device)
         params = list(hat.parameters()) + list(model.parameters())
         opt2 = torch.optim.Adam(params, lr=args.lr)
         sched2 = torch.optim.lr_scheduler.OneCycleLR(
@@ -142,8 +142,6 @@ if __name__ == "__main__":
             max_lr=args.lr,
             steps_per_epoch=len(dataloader),
             epochs=args.epochs)
-
-    target = torch.ones(args.batch_size * 2, device=device)
 
     for epoch in range(0, args.epochs):
         model.train()
@@ -155,17 +153,14 @@ if __name__ == "__main__":
         for data in tqdm.tqdm(dataloader):
 
             if args.dataset == "embed-series":
-                imagery_a, imagery_b, embeddings_text_a, embeddings_text_b = data
-                embeddings_text_a = embeddings_text_a.to(device)
-                embeddings_text_b = embeddings_text_b.to(device)
-                embeddings_text = torch.cat([embeddings_text_a, embeddings_text_b], dim=0)  # yapf: disable
+                imagery_a, imagery_b, embeddings_text = data
+                embeddings_text = embeddings_text.to(device)
                 # embeddings_text = F.softmax(embeddings_text, dim=1)
                 embeddings_text = F.normalize(embeddings_text, dim=1)
             else:
                 imagery_a, imagery_b = data
             imagery_a = imagery_a.to(device)
             imagery_b = imagery_b.to(device)
-            imagery = torch.cat([imagery_a, imagery_b], dim=0)
 
             opt1.zero_grad()
             if args.dataset == "embed-series":
@@ -173,12 +168,9 @@ if __name__ == "__main__":
 
             # Hat and body
             if args.dataset == "embed-series":
-                if target.shape[0] != imagery.shape[0]:
-                    target = torch.ones(imagery.shape[0], device=device)
-                assert imagery.shape[0] == embeddings_text.shape[0]
-                embeddings_visual = hat(model(imagery))
+                embeddings_visual = hat(model(imagery_a))
                 embeddings_visual = F.normalize(embeddings_visual, dim=1)
-                loss2 = obj2(embeddings_visual, embeddings_text, target)
+                loss2 = obj2(embeddings_visual, embeddings_text)
                 training_losses2.append(loss2.item())
                 loss2 *= 0.50
                 loss2.backward()
@@ -194,12 +186,9 @@ if __name__ == "__main__":
 
             # Hat and body
             if args.dataset == "embed-series":
-                if target.shape[0] != imagery.shape[0]:
-                    target = torch.ones(imagery_a.shape[0], device=device)
-                assert imagery.shape[0] == embeddings_text.shape[0]
-                embeddings_visual = hat(model(imagery))
+                embeddings_visual = hat(model(imagery_b))
                 embeddings_visual = F.normalize(embeddings_visual, dim=1)
-                loss2 = obj2(embeddings_visual, embeddings_text, target)
+                loss2 = obj2(embeddings_visual, embeddings_text)
                 training_losses2.append(loss2.item())
                 loss2 *= 0.50
                 loss2.backward()
