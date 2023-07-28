@@ -28,6 +28,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import copy
 import glob
 from typing import List
 
@@ -126,7 +127,7 @@ class SeriesDataset(torch.utils.data.Dataset):
                 "latlon": latlon,
                 "cog_dir_length": cog_dir_length,
             }
-            self.cog_dirs.append(_cog_dir)
+            self.cog_dirs.append(copy.copy(_cog_dir))
             self.dataset_length += cog_dir_length
 
     def __len__(self):
@@ -209,6 +210,8 @@ class SeriesEmbedDataset(SeriesDataset):
                  size: int = 512,
                  series_length: int = 5):
 
+        cog_dirs = sorted(cog_dirs)
+
         super().__init__(
             cog_dirs = cog_dirs,
             size = size,
@@ -223,6 +226,10 @@ class SeriesEmbedDataset(SeriesDataset):
             embedding_filename = f"{cog_dir}/**/{embedding_filename}"
             embedding_filename = glob.glob(embedding_filename, recursive=True)[-1]
             _cog_dir["embeddings"] = np.load(embedding_filename)
+            blocks_tall = _cog_dir.get("blocks_tall")
+            blocks_wide = _cog_dir.get("blocks_wide")
+            blocks = blocks_tall * blocks_wide
+            assert blocks == _cog_dir.get("embeddings").shape[0]
 
 
     def __getitem__(self, index):
