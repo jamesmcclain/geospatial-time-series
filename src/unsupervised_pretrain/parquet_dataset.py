@@ -97,10 +97,7 @@ def rows_to_text(rows, bbox):
                 boundary = tags.get("boundary").replace("_", " ")
                 line = f"There is {boundary} that occupies {percent:.1f}% of the visible area."
             else:
-                line = f"There is a strange area that occupies {percent:.1f}% of the visible area."
-            # else:
-            #     line = (f"There is an area that occupies {percent:.1f}% "
-            #             f"of the visible area that has tags: \"{tags}\".")
+                line = f"There is a rare area that occupies {percent:.1f}% of the visible area."
             lines.append(line)
 
     building_pct = 100. * unary_union(building_union).area / total_area
@@ -114,10 +111,8 @@ def rows_to_text(rows, bbox):
         plural_noun = "a few"
     elif math.log(building_count) <= 3.:
         plural_noun = "many"
-    elif math.log(building_count) <= 4.:
-        plural_noun = "numerous"
     else:
-        plural_noun = "a plethora of"
+        plural_noun = "numerous"
 
     building_types = ", ".join(building_types)
 
@@ -129,7 +124,7 @@ def rows_to_text(rows, bbox):
             first_line += "."
         lines = [first_line] + lines
     else:
-        lines = ["No information is available about this area."]
+        lines = [""]
 
     return " ".join(lines)
 
