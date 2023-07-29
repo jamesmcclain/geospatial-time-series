@@ -46,6 +46,10 @@ from datasets import DigestDataset, SeriesDataset, SeriesEmbedDataset
 from models import (Hat, OrthogonalLoss, SeriesEfficientNetb0,
                     SeriesMobileNetv3, SeriesResNet18, freeze, unfreeze)
 
+def remove_empty_text(a, b):
+    mask = (a[:, 0] < torch.inf)
+    return a[mask], b[mask]
+
 if __name__ == "__main__":
     # yapf: disable
     # Command line arguments
@@ -173,42 +177,46 @@ if __name__ == "__main__":
             imagery_a = imagery_a.to(device)
             imagery_b = imagery_b.to(device)
 
-            opt1.zero_grad()
-            if args.dataset == "embed-series":
-                opt2.zero_grad()
-
             # Hat and body
             if args.dataset == "embed-series":
-                embeddings_v2t = hat1(model(imagery_a))
-                embeddings_v2t = F.normalize(embeddings_v2t, dim=1)
-                embeddings_t2t = hat2(embeddings_text)
-                embeddings_t2t = F.normalize(embeddings_t2t, dim=1)
-                loss2 = obj2(embeddings_v2t, embeddings_t2t)
-                training_losses2.append(loss2.item())
-                loss2 *= 0.50
-                loss2.backward()
-                opt2.step()
-                opt2.zero_grad()
+                masked_text, masked_imagery = remove_empty_text(embeddings_text, imagery_a)  # yapf: disable
+                if masked_text.shape[0] > 0:
+                    embeddings_v2t = hat1(model(masked_imagery))
+                    embeddings_v2t = F.normalize(embeddings_v2t, dim=1)
+                    embeddings_t2t = hat2(masked_text)
+                    embeddings_t2t = F.normalize(embeddings_t2t, dim=1)
+                    loss2 = obj2(embeddings_v2t, embeddings_t2t)
+                    training_losses2.append(loss2.item())
+                    loss2 *= 0.50
+                    loss2.backward()
+                    opt2.step()
+                    opt2.zero_grad()
 
             # Body
             loss1 = obj1(model(imagery_a), model(imagery_b.to(device)))
             training_losses1.append(loss1.item())
             loss1.backward()
             opt1.step()
-            sched1.step()
+            opt1.zero_grad()
 
             # Hat and body
             if args.dataset == "embed-series":
-                embeddings_v2t = hat1(model(imagery_b))
-                embeddings_v2t = F.normalize(embeddings_v2t, dim=1)
-                embeddings_t2t = hat2(embeddings_text)
-                embeddings_t2t = F.normalize(embeddings_t2t, dim=1)
-                loss2 = obj2(embeddings_v2t, embeddings_t2t)
-                training_losses2.append(loss2.item())
-                loss2 *= 0.50
-                loss2.backward()
-                opt2.step()
-                sched2.step()
+                masked_text, masked_imagery = remove_empty_text(embeddings_text, imagery_b)  # yapf: disable
+                if masked_text.shape[0] > 0:
+                    embeddings_v2t = hat1(model(masked_imagery))
+                    embeddings_v2t = F.normalize(embeddings_v2t, dim=1)
+                    embeddings_t2t = hat2(masked_text)
+                    embeddings_t2t = F.normalize(embeddings_t2t, dim=1)
+                    loss2 = obj2(embeddings_v2t, embeddings_t2t)
+                    training_losses2.append(loss2.item())
+                    loss2 *= 0.50
+                    loss2.backward()
+                    opt2.step()
+                    opt2.zero_grad()
+
+            # Step schedulers
+            sched1.step()
+            sched2.step()
 
         training_losses1 = np.mean(training_losses1)
         if args.dataset != "embed-series":
