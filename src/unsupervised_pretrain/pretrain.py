@@ -43,12 +43,15 @@ from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
 
 from datasets import DigestDataset, SeriesDataset, SeriesEmbedDataset
-from models import (Hat, OrthogonalLoss, SeriesEfficientNetb0,
-                    SeriesMobileNetv3, SeriesResNet18, freeze, unfreeze)
+from losses import OrthogonalLoss, MaximumMeanDiscrepancyLoss, ComboLoss
+from models import (Hat, SeriesEfficientNetb0, SeriesMobileNetv3,
+                    SeriesResNet18, freeze, unfreeze)
 
-def remove_empty_text(a, b):
+
+def remove_empty_text_rows(a, b):
     mask = (a[:, 0] < torch.inf)
     return a[mask], b[mask]
+
 
 if __name__ == "__main__":
     # yapf: disable
@@ -148,7 +151,7 @@ if __name__ == "__main__":
         steps_per_epoch=len(dataloader),
         epochs=args.epochs)
     if args.dataset == "embed-series":
-        obj2 = OrthogonalLoss().to(device)
+        obj2 = ComboLoss().to(device)
         params = list(hat1.parameters()) + list(hat2.parameters()) + list(model.parameters())  # yapf: disable
         opt2 = torch.optim.Adam(params, lr=args.lr)
         sched2 = torch.optim.lr_scheduler.OneCycleLR(
@@ -179,7 +182,7 @@ if __name__ == "__main__":
 
             # Hat and body
             if args.dataset == "embed-series":
-                masked_text, masked_imagery = remove_empty_text(embeddings_text, imagery_a)  # yapf: disable
+                masked_text, masked_imagery = remove_empty_text_rows(embeddings_text, imagery_a)  # yapf: disable
                 if masked_text.shape[0] > 0:
                     embeddings_v2t = hat1(model(masked_imagery))
                     embeddings_v2t = F.normalize(embeddings_v2t, dim=1)
@@ -201,7 +204,7 @@ if __name__ == "__main__":
 
             # Hat and body
             if args.dataset == "embed-series":
-                masked_text, masked_imagery = remove_empty_text(embeddings_text, imagery_b)  # yapf: disable
+                masked_text, masked_imagery = remove_empty_text_rows(embeddings_text, imagery_b)  # yapf: disable
                 if masked_text.shape[0] > 0:
                     embeddings_v2t = hat1(model(masked_imagery))
                     embeddings_v2t = F.normalize(embeddings_v2t, dim=1)

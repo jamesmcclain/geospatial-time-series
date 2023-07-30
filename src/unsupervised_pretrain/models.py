@@ -28,8 +28,6 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import copy
-
 import torch
 import torch.nn.functional as F
 from torchvision import models
@@ -48,18 +46,6 @@ def unfreeze(m: torch.nn.Module) -> torch.nn.Module:
         p.requires_grad = True
 
 
-class OrthogonalLoss(torch.nn.Module):
-
-    def __init__(self):
-        super().__init__()
-        self.mse = torch.nn.MSELoss()
-
-    def forward(self, x, y):
-        assert x.shape[0] == y.shape[0]
-        result = torch.einsum("ik,jk->ij", x, y)
-        return self.mse(result, torch.eye(result.shape[0], device=result.device))  # yapf: disable
-
-
 class Hat(torch.nn.Module):
 
     def __init__(self, dim1, dim2):
@@ -71,7 +57,11 @@ class Hat(torch.nn.Module):
             torch.nn.Dropout(0.2),
             torch.nn.Linear(between, between),
             torch.nn.ReLU(),
-            torch.nn.BatchNorm1d(between),
+            # torch.nn.BatchNorm1d(between),
+            torch.nn.Dropout(0.2),
+            torch.nn.Linear(between, between),
+            torch.nn.ReLU(),
+            # torch.nn.BatchNorm1d(between),
             torch.nn.Linear(between, dim2),
         )
 
