@@ -34,6 +34,7 @@ import argparse
 import glob
 import json
 import logging
+import math
 import sys
 
 import numpy as np
@@ -65,13 +66,20 @@ if __name__ == "__main__":
     model = INSTRUCTOR("hkunlp/instructor-xl").to("cuda")
     model.max_seq_length = 4096
 
+    # Generate instruction, text pairs
     log.info("Producing embeddings")
     submissions = []
     for label in labels:
         submission = [instruction, label]
         submissions.append(submission)
 
+    # Generate embeddings
     embeddings = model.encode(submissions)
+
+    # Mark areas with no OSM data
+    for i in range(len(embeddings)):
+        if len(labels[i]) == 0:
+            embeddings[i, 0] = math.inf
 
     log.info("Saving")
     np.save(args.npy_file, embeddings)
