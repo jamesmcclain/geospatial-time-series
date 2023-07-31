@@ -39,8 +39,10 @@ class OrthogonalLoss(torch.nn.Module):
 
     def forward(self, x, y):
         assert x.shape[0] == y.shape[0]
+
         result = x @ y.t()
-        eye = torch.eye(result.shape[0], device=result.device)
+        eye = torch.eye(result.shape[0], dtype=result.dtype, device=result.device)
+
         return self.mse(result, eye)
 
 
