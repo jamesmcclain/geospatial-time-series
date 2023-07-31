@@ -151,8 +151,7 @@ if __name__ == "__main__":
         steps_per_epoch=len(dataloader),
         epochs=args.epochs)
     if args.dataset == "embed-series":
-        obj2 = MaximumMeanDiscrepancyLoss().to(device)
-        obj3 = ComboLoss().to(device)
+        obj2 = ComboLoss().to(device)
         params = list(hat1.parameters()) + list(hat2.parameters()) + list(model.parameters())  # yapf: disable
         opt2 = torch.optim.Adam(params, lr=args.lr)
         sched2 = torch.optim.lr_scheduler.OneCycleLR(
@@ -213,7 +212,7 @@ if __name__ == "__main__":
                     embeddings_v2t = F.normalize(embeddings_v2t, dim=1)
                     embeddings_t2t = hat2(masked_text)
                     embeddings_t2t = F.normalize(embeddings_t2t, dim=1)
-                    loss2 = obj3(embeddings_v2t, embeddings_t2t)
+                    loss2 = obj2(embeddings_v2t, embeddings_t2t)
                     training_losses2.append(loss2.item())
                     loss2 *= 0.50
                     loss2.backward()
