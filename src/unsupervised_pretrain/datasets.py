@@ -37,12 +37,20 @@ import rasterio as rio
 import torch
 from pyproj import Proj
 
+# from multiprocessing import Pool
+
 
 def split_list(lst, chunk_size):
     sublists = []
     for i in range(0, len(lst), chunk_size):
         sublists.append(lst[i:i + chunk_size])
     return sublists
+
+
+# # Read the imagery
+# def read_file(filename, w):
+#     with rio.open(filename, "r") as ds:
+#         return ds.read(window=w).astype(np.float32)
 
 
 class DigestDataset(torch.utils.data.Dataset):
@@ -198,6 +206,14 @@ class SeriesDataset(torch.utils.data.Dataset):
             with rio.open(filename_b, "r") as ds:
                 imagery_b.append(ds.read(window=w).astype(np.float32))
         imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
+
+        # pool = Pool()
+        # imagery_a = pool.starmap(read_file, [(filename, w) for filename in group_a])
+        # imagery_b = pool.starmap(read_file, [(filename, w) for filename in group_b])
+        # imagery_a = torch.from_numpy(np.stack(imagery_a, axis=0))
+        # imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
+        # pool.close()
+        # pool.join()
 
         assert imagery_a.shape[2] != 0 and imagery_b.shape[2] != 0
 

@@ -41,7 +41,9 @@ class OrthogonalLoss(torch.nn.Module):
         assert x.shape[0] == y.shape[0]
 
         result = x @ y.t()
-        eye = torch.eye(result.shape[0], dtype=result.dtype, device=result.device)
+        eye = torch.eye(result.shape[0],
+                        dtype=result.dtype,
+                        device=result.device)
 
         return self.mse(result, eye)
 
@@ -68,6 +70,7 @@ class MaximumMeanDiscrepancyLoss(torch.nn.Module):
         kernel_xy_mean = torch.mean(kernel_xy)
 
         return kernel_x_mean - (2 * kernel_xy_mean) + kernel_y_mean
+
 
 class ComboLoss(torch.nn.Module):
 

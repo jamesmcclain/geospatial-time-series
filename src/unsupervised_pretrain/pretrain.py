@@ -43,7 +43,7 @@ from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
 
 from datasets import DigestDataset, SeriesDataset, SeriesEmbedDataset
-from losses import OrthogonalLoss, MaximumMeanDiscrepancyLoss, ComboLoss
+from losses import ComboLoss, MaximumMeanDiscrepancyLoss, OrthogonalLoss
 from models import (Hat, SeriesEfficientNetb0, SeriesMobileNetv3,
                     SeriesResNet18, freeze, unfreeze)
 
