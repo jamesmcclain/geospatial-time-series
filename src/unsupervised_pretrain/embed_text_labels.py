@@ -56,7 +56,7 @@ if __name__ == "__main__":
     # yapf: enable
 
     if args.instruction is None:
-        instruction = "Represent the geospatial data (the number, proportion, and description of geographic features) for clustering:"
+        instruction = "Represent the geospatial data for retrieval; Input: "
     else:
         instruction = args.instruction
 
