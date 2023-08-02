@@ -84,16 +84,20 @@ class DigestDataset(torch.utils.data.Dataset):
 
 class SeriesDataset(torch.utils.data.Dataset):
 
-    def __init__(self,
-                 cog_dirs: List[str],
-                 size: int = 512,
-                 series_length: int = 5,
-                 text_mode: bool = False):
+    def __init__(
+        self,
+        cog_dirs: List[str],
+        size: int = 512,
+        series_length: int = 5,
+        text_mode: bool = False,
+        dump_mode: bool = False,
+    ):
         super().__init__()
         self.size = size
         self.dataset_length = 0
         self.cog_dirs = []
         self.text_mode = text_mode
+        self.dump_mode = dump_mode
 
         for cog_dir in sorted(cog_dirs):
 
@@ -201,6 +205,9 @@ class SeriesDataset(torch.utils.data.Dataset):
                 imagery_a.append(ds.read(window=w).astype(np.float32))
         imagery_a = torch.from_numpy(np.stack(imagery_a, axis=0))
 
+        if self.dump_mode:
+            return imagery_a
+
         imagery_b = []
         for filename_b in group_b:
             with rio.open(filename_b, "r") as ds:
@@ -224,14 +231,17 @@ class SeriesEmbedDataset(SeriesDataset):
     def __init__(self,
                  cog_dirs: List[str],
                  size: int = 512,
-                 series_length: int = 5):
+                 series_length: int = 5,
+                 dump_mode: bool = False,
+                 ):
 
         cog_dirs = sorted(cog_dirs)
 
         super().__init__(
             cog_dirs = cog_dirs,
             size = size,
-            series_length = series_length
+            series_length = series_length,
+            dump_mode = dump_mode
         )
 
         for cog_dir, _cog_dir in zip(cog_dirs, self.cog_dirs):
@@ -251,9 +261,15 @@ class SeriesEmbedDataset(SeriesDataset):
     def __getitem__(self, index):
 
         cog_dir, cog_dir_relative_index = self.cog_dir_and_groups(index)
-        imagery_a, imagery_b = super().__getitem__(index)
+        if self.dump_mode:
+            imagery_a = super().__getitem__(index)
+        else:
+            imagery_a, imagery_b = super().__getitem__(index)
         len_groups = len(cog_dir.get("groups"))
         group_relative_index = cog_dir_relative_index // len_groups
         embedding = cog_dir.get("embeddings")[group_relative_index]
 
-        return (imagery_a, imagery_b, embedding)
+        if self.dump_mode:
+            return (imagery_a, embedding)
+        else:
+            return (imagery_a, imagery_b, embedding)
