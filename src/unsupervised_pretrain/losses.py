@@ -37,31 +37,11 @@ class InnerProductMatchLoss(torch.nn.Module):
         super(InnerProductMatchLoss, self).__init__()
         self.mse_loss = torch.nn.MSELoss()
 
-    def forward(self, p1, p2, y):
-        ground_truth = y @ y.t()
-        proj1 = p1 @ p1.t()
-        proj2 = p2 @ p2.t()
-        part0 = self.mse_loss(proj1, ground_truth)
-        part1 = self.mse_loss(proj2, ground_truth)
-        part2 = self.mse_loss(proj1, proj2)
-        return part0 + part1 + (2 * part2)
-
-
-class OrthogonalLoss(torch.nn.Module):
-
-    def __init__(self):
-        super().__init__()
-        self.mse = torch.nn.MSELoss()
-
     def forward(self, x, y):
-        assert x.shape[0] == y.shape[0]
-
-        result = x @ y.t()
-        eye = torch.eye(result.shape[0],
-                        dtype=result.dtype,
-                        device=result.device)
-
-        return self.mse(result, eye)
+        target = y @ y.t()
+        one = x @ y.t()
+        two = y @ x.t()
+        return self.mse_loss(one, target) + self.mse_loss(two, target)
 
 
 class MaximumMeanDiscrepancyLoss(torch.nn.Module):
@@ -92,8 +72,8 @@ class ComboLoss(torch.nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.orthogonal = OrthogonalLoss()
+        self.inner = InnerProductMatchLoss()
         self.mmd = MaximumMeanDiscrepancyLoss()
 
     def forward(self, x, y):
-        return self.orthogonal(x, y) + self.mmd(x, y)
+        return self.inner(x, y) + self.mmd(x, y)

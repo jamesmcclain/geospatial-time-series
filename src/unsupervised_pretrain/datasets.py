@@ -53,6 +53,25 @@ def split_list(lst, chunk_size):
 #         return ds.read(window=w).astype(np.float32)
 
 
+class EmbedEmbedDataset(torch.utils.data.Dataset):
+
+    def __init__(self, visual_npy, text_npy):
+        self.visual_embeddings = np.load(visual_npy)
+        self.text_embeddings = np.load(text_npy)
+        mask = (self.text_embeddings[:, 0] < np.inf)
+        self.visual_embeddings = self.visual_embeddings[mask]
+        self.text_embeddings = self.text_embeddings[mask]
+        assert self.visual_embeddings.shape[0] == self.text_embeddings.shape[0]
+
+    def __len__(self):
+        return self.visual_embeddings.shape[0]
+
+    def __getitem__(self, index):
+        visual_embedding = self.visual_embeddings[index]
+        text_embedding = self.text_embeddings[index]
+        return (visual_embedding, text_embedding)
+
+
 class DigestDataset(torch.utils.data.Dataset):
 
     def __init__(self, pt_dirs: List[str]):
