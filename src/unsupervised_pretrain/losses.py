@@ -31,6 +31,22 @@
 import torch
 
 
+class InnerProductMatchLoss(torch.nn.Module):
+
+    def __init__(self):
+        super(InnerProductMatchLoss, self).__init__()
+        self.mse_loss = torch.nn.MSELoss()
+
+    def forward(self, p1, p2, y):
+        ground_truth = y @ y.t()
+        proj1 = p1 @ p1.t()
+        proj2 = p2 @ p2.t()
+        part0 = self.mse_loss(proj1, ground_truth)
+        part1 = self.mse_loss(proj2, ground_truth)
+        part2 = self.mse_loss(proj1, proj2)
+        return part0 + part1 + (2 * part2)
+
+
 class OrthogonalLoss(torch.nn.Module):
 
     def __init__(self):

@@ -43,7 +43,7 @@ from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
 
 from datasets import DigestDataset, SeriesDataset, SeriesEmbedDataset
-from losses import ComboLoss, MaximumMeanDiscrepancyLoss, OrthogonalLoss
+from losses import InnerProductMatchLoss
 from models import (Hat, SeriesEfficientNetb0, SeriesMobileNetv3,
                     SeriesResNet18, freeze, unfreeze)
 
@@ -129,17 +129,16 @@ if __name__ == "__main__":
         log.info(f"Model weights loaded from {args.pth_in}")
 
     if args.dataset == "embed-series":
-        E = 768  # Instructor-XL
-
+        E1 = 768  # Instructor-XL
+        E2 = 64  # Target dimensions
         if args.pth_hat1_in is not None:
             hat1 = torch.load(args.pth_hat1_in, map_location=device).to(device)
         else:
-            hat1 = Hat(dim1=model.embedding_dim, dim2=E).to(device)
-
+            hat1 = Hat(dim1=model.embedding_dim, dim2=E2).to(device)
         if args.pth_hat2_in is not None:
             hat2 = torch.load(args.pth_hat2_in, map_location=device).to(device)
         else:
-            hat2 = Hat(dim1=E, dim2=model.embedding_dim).to(device)
+            hat2 = Hat(dim1=E1, dim2=E2).to(device)
 
     # Loss function, optimizer, scheduler
     base_obj = losses.TripletMarginLoss().to(device)
@@ -151,7 +150,7 @@ if __name__ == "__main__":
         steps_per_epoch=len(dataloader),
         epochs=args.epochs)
     if args.dataset == "embed-series":
-        obj2 = ComboLoss().to(device)
+        obj2 = InnerProductMatchLoss().to(device)
         params = list(hat1.parameters()) + list(hat2.parameters()) + list(model.parameters())  # yapf: disable
         opt2 = torch.optim.Adam(params, lr=args.lr)
         sched2 = torch.optim.lr_scheduler.OneCycleLR(
@@ -173,7 +172,6 @@ if __name__ == "__main__":
             if args.dataset == "embed-series":
                 imagery_a, imagery_b, embeddings_text = data
                 embeddings_text = embeddings_text.to(device)
-                # embeddings_text = F.softmax(embeddings_text, dim=1)
                 embeddings_text = F.normalize(embeddings_text, dim=1)
             else:
                 imagery_a, imagery_b = data
@@ -184,12 +182,11 @@ if __name__ == "__main__":
             if args.dataset == "embed-series":
                 masked_text, masked_imagery = remove_empty_text_rows(embeddings_text, imagery_a)  # yapf: disable
                 if masked_text.shape[0] > 0:
-                    embeddings_v2t = hat1(model(masked_imagery))
-                    embeddings_v2t = F.normalize(embeddings_v2t, dim=1)
-                    # embeddings_t2t = hat2(masked_text)
-                    embeddings_t2t = masked_text
-                    embeddings_t2t = F.normalize(embeddings_t2t, dim=1)
-                    loss2 = obj2(embeddings_v2t, embeddings_t2t)
+                    embeddings_v2l = hat1(model(masked_imagery))
+                    embeddings_v2l = F.normalize(embeddings_v2l, dim=1)
+                    embeddings_t2l = hat2(masked_text)
+                    embeddings_t2l = F.normalize(embeddings_t2l, dim=1)
+                    loss2 = obj2(embeddings_v2l, embeddings_t2l, masked_text)
                     training_losses2.append(loss2.item())
                     loss2 *= 0.50
                     loss2.backward()
@@ -197,7 +194,7 @@ if __name__ == "__main__":
                     opt2.zero_grad()
 
             # Body
-            loss1 = obj1(model(imagery_a), model(imagery_b.to(device)))
+            loss1 = obj1(model(imagery_a), model(imagery_b))
             training_losses1.append(loss1.item())
             loss1.backward()
             opt1.step()
@@ -207,12 +204,11 @@ if __name__ == "__main__":
             if args.dataset == "embed-series":
                 masked_text, masked_imagery = remove_empty_text_rows(embeddings_text, imagery_b)  # yapf: disable
                 if masked_text.shape[0] > 0:
-                    # embeddings_v2t = hat1(model(masked_imagery))
-                    embeddings_v2t = model(masked_imagery)
-                    embeddings_v2t = F.normalize(embeddings_v2t, dim=1)
-                    embeddings_t2t = hat2(masked_text)
-                    embeddings_t2t = F.normalize(embeddings_t2t, dim=1)
-                    loss2 = obj2(embeddings_v2t, embeddings_t2t)
+                    embeddings_v2l = hat1(model(masked_imagery))
+                    embeddings_v2l = F.normalize(embeddings_v2l, dim=1)
+                    embeddings_t2l = hat2(masked_text)
+                    embeddings_t2l = F.normalize(embeddings_t2l, dim=1)
+                    loss2 = obj2(embeddings_v2l, embeddings_t2l, masked_text)
                     training_losses2.append(loss2.item())
                     loss2 *= 0.50
                     loss2.backward()
