@@ -31,18 +31,6 @@
 import torch
 
 
-class InnerProductMatchLoss(torch.nn.Module):
-
-    def __init__(self):
-        super(InnerProductMatchLoss, self).__init__()
-        self.mse_loss = torch.nn.MSELoss()
-
-    def forward(self, x, y):
-        target = y @ y.t()
-        actual = x @ x.t()
-        return self.mse_loss(actual, target)
-
-
 class MaximumMeanDiscrepancyLoss(torch.nn.Module):
 
     def __init__(self):
