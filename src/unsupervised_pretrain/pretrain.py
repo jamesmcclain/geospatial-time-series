@@ -42,10 +42,9 @@ import tqdm
 from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
 
-from datasets import (DigestDataset, EmbedEmbedDataset, SeriesDataset,
-                      SeriesEmbedDataset)
-from models import (Hat, SeriesEfficientNetb0, SeriesMobileNetv3,
-                    SeriesResNet18, freeze, unfreeze)
+from datasets import SeriesDataset, SeriesEmbedDataset
+from models import (SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18,
+                    freeze, unfreeze)
 
 
 def remove_empty_text_rows(a, b):
