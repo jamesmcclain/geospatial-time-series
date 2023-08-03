@@ -60,53 +60,37 @@ def remove_none_values(input_dict):
 
 def rows_to_text(rows, bbox):
 
-    label_count = len(rows)
     building_count = 0
     total_area = bbox.area
-    building_union = []
-    nonbuilding_union = []
-
-    building_types = set()
+    lulcs = set()
 
     lines = []
     for _, row in rows.iterrows():
         tags = remove_none_values(row["tags"])
         del tags["type"]
         is_building = "building" in tags
+
         if is_building:
             building_count = building_count + 1
-            geometry = row["geometry"]
-            clipped_geometry = row["clipped_geometry"]
-            building_union.append(geometry)
-            building_type = tags.get("building", "yes")
-            if building_type.lower() != "yes":
-                building_types.add(building_type)
         else:
             clipped_geometry = row["clipped_geometry"]
             percent = 100. * clipped_geometry.area / total_area
-            nonbuilding_union.append(clipped_geometry)
             if percent < 5.:
                 continue  # Suppress areas that are less than 5% of the scene
             if "natural" in tags or "landuse" in tags:
                 lulc = tags.get("natural", tags.get("landuse"))
-                line = f"There is {lulc} area that occupies {percent:.1f}% of the visible area."
+                lulcs.add(lulc)
             elif "leisure" in tags:
-                leisure = tags.get("leisure").replace("_", " ")
-                line = f"There is a {leisure} that occupies {percent:.1f}% of the visible area."
+                lulc = tags.get("leisure").replace("_", " ")
+                lulcs.add(lulc)
             elif "boundary" in tags:
-                boundary = tags.get("boundary").replace("_", " ")
-                line = f"There is {boundary} that occupies {percent:.1f}% of the visible area."
-            else:
-                line = f"There is a rare area that occupies {percent:.1f}% of the visible area."
-            lines.append(line)
-
-    building_pct = 100. * unary_union(building_union).area / total_area
-    nonbuilding_pct = 100. * unary_union(nonbuilding_union).area / total_area
+                lulc = tags.get("boundary").replace("_", " ")
+                lulcs.add(lulc)
 
     if building_count == 0:
-        plural_noun = "zero"
+        pass
     elif math.log(building_count) <= 1.:
-        plural_noun = "a handful of"
+        plural_noun = "a handful"
     elif math.log(building_count) <= 2.:
         plural_noun = "a few"
     elif math.log(building_count) <= 3.:
@@ -114,19 +98,18 @@ def rows_to_text(rows, bbox):
     else:
         plural_noun = "numerous"
 
-    building_types = ", ".join(building_types)
-
-    if len(rows) > 0:
-        first_line = f"There are {plural_noun} buildings in the scene"
-        if len(building_types) > 0:
-            first_line += f" of type {building_types}."
-        else:
-            first_line += "."
-        lines = [first_line] + lines
+    if building_count == 0:
+        building_report = ""
     else:
-        lines = [""]
+        building_report = f"Buildings: {plural_noun}. "
 
-    return " ".join(lines)
+    if len(lulcs) == 0:
+        lulc_report = ""
+    else:
+        lulcs = ", ".join(list(lulcs))
+        lulc_report = f"Land use land cover: {lulcs}."
+
+    return building_report + lulc_report
 
 
 class ParquetHackDataset(SeriesDataset):

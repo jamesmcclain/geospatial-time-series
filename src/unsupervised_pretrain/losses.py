@@ -31,19 +31,16 @@
 import torch
 
 
-class OrthogonalLoss(torch.nn.Module):
+class InnerProductMatchLoss(torch.nn.Module):
 
     def __init__(self):
-        super().__init__()
-        self.mse = torch.nn.MSELoss()
+        super(InnerProductMatchLoss, self).__init__()
+        self.mse_loss = torch.nn.MSELoss()
 
     def forward(self, x, y):
-        assert x.shape[0] == y.shape[0]
-
-        result = x @ y.t()
-        eye = torch.eye(result.shape[0], dtype=result.dtype, device=result.device)
-
-        return self.mse(result, eye)
+        target = y @ y.t()
+        actual = x @ x.t()
+        return self.mse_loss(actual, target)
 
 
 class MaximumMeanDiscrepancyLoss(torch.nn.Module):
@@ -68,13 +65,3 @@ class MaximumMeanDiscrepancyLoss(torch.nn.Module):
         kernel_xy_mean = torch.mean(kernel_xy)
 
         return kernel_x_mean - (2 * kernel_xy_mean) + kernel_y_mean
-
-class ComboLoss(torch.nn.Module):
-
-    def __init__(self):
-        super().__init__()
-        self.orthogonal = OrthogonalLoss()
-        self.mmd = MaximumMeanDiscrepancyLoss()
-
-    def forward(self, x, y):
-        return self.orthogonal(x, y) + self.mmd(x, y)
