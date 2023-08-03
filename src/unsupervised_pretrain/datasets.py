@@ -37,20 +37,12 @@ import rasterio as rio
 import torch
 from pyproj import Proj
 
-# from multiprocessing import Pool
-
 
 def split_list(lst, chunk_size):
     sublists = []
     for i in range(0, len(lst), chunk_size):
         sublists.append(lst[i:i + chunk_size])
     return sublists
-
-
-# # Read the imagery
-# def read_file(filename, w):
-#     with rio.open(filename, "r") as ds:
-#         return ds.read(window=w).astype(np.float32)
 
 
 class EmbedEmbedDataset(torch.utils.data.Dataset):
@@ -70,35 +62,6 @@ class EmbedEmbedDataset(torch.utils.data.Dataset):
         visual_embedding = self.visual_embeddings[index]
         text_embedding = self.text_embeddings[index]
         return (visual_embedding, text_embedding)
-
-
-class DigestDataset(torch.utils.data.Dataset):
-
-    def __init__(self, pt_dirs: List[str]):
-        self.pt_list = []
-        for pt_dir in pt_dirs:
-            pt_list = glob.glob(f"{pt_dir}/**/*.pt", recursive=True)
-            self.pt_list += pt_list
-
-    def __len__(self):
-        return len(self.pt_list)
-
-    def __getitem__(self, index):
-        if index >= len(self.pt_list):
-            raise StopIteration()
-
-        this_pt = self.pt_list[index]
-        this_data = torch.load(this_pt)
-
-        pt_dir, pt_filename = this_pt.rsplit("/", 1)
-        cog_dir, group, y, x_rest = pt_filename.split("-")
-        group = int(group)
-        try:
-            that_data = torch.load(f"{pt_dir}/{cog_dir}-{group+1}-{y}-{x_rest}")  # yapf: disable
-        except:
-            that_data = torch.load(f"{pt_dir}/{cog_dir}-0-{y}-{x_rest}")
-
-        return (this_data, that_data)
 
 
 class SeriesDataset(torch.utils.data.Dataset):
@@ -232,14 +195,6 @@ class SeriesDataset(torch.utils.data.Dataset):
             with rio.open(filename_b, "r") as ds:
                 imagery_b.append(ds.read(window=w).astype(np.float32))
         imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
-
-        # pool = Pool()
-        # imagery_a = pool.starmap(read_file, [(filename, w) for filename in group_a])
-        # imagery_b = pool.starmap(read_file, [(filename, w) for filename in group_b])
-        # imagery_a = torch.from_numpy(np.stack(imagery_a, axis=0))
-        # imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
-        # pool.close()
-        # pool.join()
 
         assert imagery_a.shape[2] != 0 and imagery_b.shape[2] != 0
 
