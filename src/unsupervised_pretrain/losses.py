@@ -39,9 +39,8 @@ class InnerProductMatchLoss(torch.nn.Module):
 
     def forward(self, x, y):
         target = y @ y.t()
-        one = x @ y.t()
-        two = y @ x.t()
-        return self.mse_loss(one, target) + self.mse_loss(two, target)
+        actual = x @ x.t()
+        return self.mse_loss(actual, target)
 
 
 class MaximumMeanDiscrepancyLoss(torch.nn.Module):
@@ -66,14 +65,3 @@ class MaximumMeanDiscrepancyLoss(torch.nn.Module):
         kernel_xy_mean = torch.mean(kernel_xy)
 
         return kernel_x_mean - (2 * kernel_xy_mean) + kernel_y_mean
-
-
-class ComboLoss(torch.nn.Module):
-
-    def __init__(self):
-        super().__init__()
-        self.inner = InnerProductMatchLoss()
-        self.mmd = MaximumMeanDiscrepancyLoss()
-
-    def forward(self, x, y):
-        return self.inner(x, y) + self.mmd(x, y)

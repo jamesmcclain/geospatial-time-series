@@ -44,7 +44,7 @@ from torch.utils.data import DataLoader
 
 from datasets import (DigestDataset, EmbedEmbedDataset, SeriesDataset,
                       SeriesEmbedDataset)
-from losses import InnerProductMatchLoss
+from losses import MaximumMeanDiscrepancyLoss, InnerProductMatchLoss
 from models import (Hat, SeriesEfficientNetb0, SeriesMobileNetv3,
                     SeriesResNet18, freeze, unfreeze)
 
@@ -107,8 +107,6 @@ if __name__ == "__main__":
         pin_memory=True,
         num_workers=args.num_workers,
     )
-    if args.dataset != "embed-embed":
-        dataloader = tqdm.tqdm(dataloader)
 
     # Logging
     logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(asctime)-15s %(message)s")  # yapf: disable
@@ -136,12 +134,11 @@ if __name__ == "__main__":
 
     # Hats
     if args.dataset in ["embed-series", "embed-embed"]:
-        E1 = 768  # Instructor-XL
-        E2 = 64  # Target dimensions
+        E = 768  # Instructor-XL
         if args.pth_hat1_in is not None:
             hat1 = torch.load(args.pth_hat1_in, map_location=device).to(device)
         else:
-            hat1 = Hat(dim1=model.embedding_dim, dim2=E1).to(device)
+            hat1 = Hat(dim1=model.embedding_dim, dim2=E).to(device)
 
     # Loss functions, optimizers, schedulers
     base_obj = losses.TripletMarginLoss().to(device)
@@ -159,7 +156,7 @@ if __name__ == "__main__":
             params = list(hat1.parameters()) + list(model.parameters())  # yapf: disable
         elif args.dataset == "embed-embed":
             params = list(hat1.parameters())  # yapf: disable
-        opt2 = torch.optim.Adam(params, lr=args.lr)
+        opt2 = torch.optim.Adam(params, lr=1e-3)
         sched2 = torch.optim.lr_scheduler.OneCycleLR(
             opt2,
             max_lr=args.lr,
@@ -173,7 +170,7 @@ if __name__ == "__main__":
 
         training_losses1 = []
         training_losses2 = []
-        for data in dataloader:
+        for data in tqdm.tqdm(dataloader):
 
             if args.dataset == "embed-series":
                 imagery_a, imagery_b, embeddings_text = data
@@ -228,10 +225,10 @@ if __name__ == "__main__":
 
             # Hat and body
             if args.dataset == "embed-series":
-                masked_text, masked_imagery = remove_empty_text_rows(embeddings_text, imagery_b)  # yapf: disable
+                masked_text, masked_imagery = remove_empty_text_rows(embeddings_text, imagery_a)  # yapf: disable
                 if masked_text.shape[0] > 0:
                     # yapf: disable
-                    visual_embeddings = model(masked_imagery)
+                    embeddings_visual = model(masked_imagery)
                     embeddings_visual = F.normalize(embeddings_visual, dim=1)
                     embeddings_visual2text = hat1(embeddings_visual)
                     embeddings_visual2text = F.normalize(embeddings_visual2text, dim=1)
