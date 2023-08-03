@@ -164,7 +164,7 @@ if __name__ == "__main__":
                     # yapf: disable
                     embeddings_visual = model(masked_imagery)
                     embeddings_visual = F.normalize(embeddings_visual, dim=1)
-                    loss2 = obj2(embeddings_visual, masked_text)
+                    loss2 = obj2(embeddings_visual @ embeddings_visual.t(), masked_text @ masked_text.t())
                     training_losses2.append(loss2.item())
                     loss2.backward()
                     opt2.step()
@@ -185,7 +185,7 @@ if __name__ == "__main__":
                     # yapf: disable
                     embeddings_visual = model(masked_imagery)
                     embeddings_visual = F.normalize(embeddings_visual, dim=1)
-                    loss2 = obj2(embeddings_visual, masked_text)
+                    loss2 = obj2(embeddings_visual @ embeddings_visual.t(), masked_text @ masked_text.t())
                     training_losses2.append(loss2.item())
                     loss2.backward()
                     opt2.step()

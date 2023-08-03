@@ -45,25 +45,6 @@ def split_list(lst, chunk_size):
     return sublists
 
 
-class EmbedEmbedDataset(torch.utils.data.Dataset):
-
-    def __init__(self, visual_npy, text_npy):
-        self.visual_embeddings = np.load(visual_npy)
-        self.text_embeddings = np.load(text_npy)
-        mask = (self.text_embeddings[:, 0] < np.inf)
-        self.visual_embeddings = self.visual_embeddings[mask]
-        self.text_embeddings = self.text_embeddings[mask]
-        assert self.visual_embeddings.shape[0] == self.text_embeddings.shape[0]
-
-    def __len__(self):
-        return self.visual_embeddings.shape[0]
-
-    def __getitem__(self, index):
-        visual_embedding = self.visual_embeddings[index]
-        text_embedding = self.text_embeddings[index]
-        return (visual_embedding, text_embedding)
-
-
 class SeriesDataset(torch.utils.data.Dataset):
 
     def __init__(
@@ -200,6 +181,22 @@ class SeriesDataset(torch.utils.data.Dataset):
 
         return (imagery_a, imagery_b)
 
+def find_k_furthest_vectors(collection_vectors, k):
+    res = np.zeros((collection_vectors.shape[0], k, collection_vectors.shape[1]))
+
+    for i in range(collection_vectors.shape[0]):
+        cosine_similarities = np.dot(collection_vectors, collection_vectors[i])
+        cosine_similarities[i] = np.inf
+        indices = np.argpartition(cosine_similarities, k)[:k]
+        res[i] = collection_vectors[indices]
+    return res
+
+def random_convex_combination(vector_array):
+    weights = np.random.rand(vector_array.shape[0])
+    weights /= weights.sum()
+    convex_combination = weights @ vector_array
+    return convex_combination
+
 class SeriesEmbedDataset(SeriesDataset):
 
     def __init__(self,
@@ -225,11 +222,19 @@ class SeriesEmbedDataset(SeriesDataset):
             embedding_filename = f"{cog_dir_parts[-1]}-{size}.npy"
             embedding_filename = f"{cog_dir}/**/{embedding_filename}"
             embedding_filename = glob.glob(embedding_filename, recursive=True)[-1]
-            _cog_dir["embeddings"] = np.load(embedding_filename)
+
+            vectors = np.load(embedding_filename)
+            norms = np.linalg.norm(vectors, axis=1)
+            vectors[norms != np.inf] /= norms[norms != np.inf, np.newaxis]
+            others = find_k_furthest_vectors(vectors, 5)
+
+            _cog_dir["embeddings"] = vectors
+            _cog_dir["non_embeddings"] = others
             blocks_tall = _cog_dir.get("blocks_tall")
             blocks_wide = _cog_dir.get("blocks_wide")
             blocks = blocks_tall * blocks_wide
             assert blocks == _cog_dir.get("embeddings").shape[0]
+            assert blocks == _cog_dir.get("non_embeddings").shape[0]
 
 
     def __getitem__(self, index):

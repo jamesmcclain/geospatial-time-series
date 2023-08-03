@@ -46,6 +46,25 @@ def unfreeze(m: torch.nn.Module) -> torch.nn.Module:
         p.requires_grad = True
 
 
+class EmbeddingClassifier(torch.nn.Module):
+    def __init__(self, dim1, dim2):
+        super(EmbeddingClassifier, self).__init__()
+        self.net = torch.nn.Sequential(
+            self.fc1 = torch.nn.Linear(dim1 + dim2, 1024),
+            self.relu1 = torch.nn.ReLU(),
+            self.fc2 = torch.nn.Linear(1024, 512),
+            self.relu2 = torch.nn.ReLU(),
+            self.fc3 = torch.nn.Linear(512, 256),
+            self.relu3 = torch.nn.ReLU(),
+            self.fc4 = torch.nn.Linear(256, 1),
+        )
+
+    def forward(self, x, y):
+        x = torch.cat([x, y], dim=1)
+        x = self.net(x)
+        return F.sigmoid(x)
+
+
 class SeriesModel(torch.nn.Module):
 
     def __init__(self):
