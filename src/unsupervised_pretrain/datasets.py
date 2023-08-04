@@ -53,14 +53,12 @@ class SeriesDataset(torch.utils.data.Dataset):
         size: int = 512,
         series_length: int = 5,
         text_mode: bool = False,
-        dump_mode: bool = False,
     ):
         super().__init__()
         self.size = size
         self.dataset_length = 0
         self.cog_dirs = []
         self.text_mode = text_mode
-        self.dump_mode = dump_mode
 
         for cog_dir in sorted(cog_dirs):
 
@@ -168,9 +166,6 @@ class SeriesDataset(torch.utils.data.Dataset):
                 imagery_a.append(ds.read(window=w).astype(np.float32))
         imagery_a = torch.from_numpy(np.stack(imagery_a, axis=0))
 
-        if self.dump_mode:
-            return imagery_a
-
         imagery_b = []
         for filename_b in group_b:
             with rio.open(filename_b, "r") as ds:
@@ -181,21 +176,21 @@ class SeriesDataset(torch.utils.data.Dataset):
 
         return (imagery_a, imagery_b)
 
-def find_k_furthest_vectors(collection_vectors, k):
-    res = np.zeros((collection_vectors.shape[0], k, collection_vectors.shape[1]))
+def find_k_furthest_vectors(vectors, good_vectors, k):
+    res = np.zeros((vectors.shape[0], k, vectors.shape[1]))
 
-    for i in range(collection_vectors.shape[0]):
-        cosine_similarities = np.dot(collection_vectors, collection_vectors[i])
-        cosine_similarities[i] = np.inf
+    for i in range(vectors.shape[0]):
+        cosine_similarities = np.dot(good_vectors, vectors[i])
         indices = np.argpartition(cosine_similarities, k)[:k]
-        res[i] = collection_vectors[indices]
+        res[i] = good_vectors[indices]
+
     return res
 
 def random_convex_combination(vector_array):
     weights = np.random.rand(vector_array.shape[0])
     weights /= weights.sum()
     convex_combination = weights @ vector_array
-    return convex_combination
+    return convex_combination.astype(np.float32)
 
 class SeriesEmbedDataset(SeriesDataset):
 
@@ -203,7 +198,6 @@ class SeriesEmbedDataset(SeriesDataset):
                  cog_dirs: List[str],
                  size: int = 512,
                  series_length: int = 5,
-                 dump_mode: bool = False,
                  ):
 
         cog_dirs = sorted(cog_dirs)
@@ -212,7 +206,6 @@ class SeriesEmbedDataset(SeriesDataset):
             cog_dirs = cog_dirs,
             size = size,
             series_length = series_length,
-            dump_mode = dump_mode
         )
 
         for cog_dir, _cog_dir in zip(cog_dirs, self.cog_dirs):
@@ -226,7 +219,8 @@ class SeriesEmbedDataset(SeriesDataset):
             vectors = np.load(embedding_filename)
             norms = np.linalg.norm(vectors, axis=1)
             vectors[norms != np.inf] /= norms[norms != np.inf, np.newaxis]
-            others = find_k_furthest_vectors(vectors, 5)
+            good_vectors = vectors[norms != np.inf]
+            others = find_k_furthest_vectors(vectors, good_vectors, 1)
 
             _cog_dir["embeddings"] = vectors
             _cog_dir["non_embeddings"] = others
@@ -240,15 +234,14 @@ class SeriesEmbedDataset(SeriesDataset):
     def __getitem__(self, index):
 
         cog_dir, cog_dir_relative_index = self.cog_dir_and_groups(index)
-        if self.dump_mode:
-            imagery_a = super().__getitem__(index)
-        else:
-            imagery_a, imagery_b = super().__getitem__(index)
+        imagery_a, imagery_b = super().__getitem__(index)
         len_groups = len(cog_dir.get("groups"))
         group_relative_index = cog_dir_relative_index // len_groups
         embedding = cog_dir.get("embeddings")[group_relative_index]
+        non_embedding = cog_dir.get("non_embeddings")[group_relative_index]
+        non_embedding = random_convex_combination(non_embedding)
 
-        if self.dump_mode:
-            return (imagery_a, embedding)
-        else:
-            return (imagery_a, imagery_b, embedding)
+        embedding += np.random.normal(loc=0, scale=1e-3, size=embedding.shape)
+        non_embedding += np.random.normal(loc=0, scale=1e-3, size=non_embedding.shape)
+
+        return (imagery_a, imagery_b, embedding, non_embedding)
