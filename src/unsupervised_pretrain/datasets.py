@@ -176,21 +176,6 @@ class SeriesDataset(torch.utils.data.Dataset):
 
         return (imagery_a, imagery_b)
 
-def find_k_furthest_vectors(vectors, good_vectors, k):
-    res = np.zeros((vectors.shape[0], k, vectors.shape[1]))
-
-    for i in range(vectors.shape[0]):
-        cosine_similarities = np.dot(good_vectors, vectors[i])
-        indices = np.argpartition(cosine_similarities, k)[:k]
-        res[i] = good_vectors[indices]
-
-    return res
-
-def random_convex_combination(vector_array):
-    weights = np.random.rand(vector_array.shape[0])
-    weights /= weights.sum()
-    convex_combination = weights @ vector_array
-    return convex_combination.astype(np.float32)
 
 class SeriesEmbedDataset(SeriesDataset):
 
@@ -217,18 +202,12 @@ class SeriesEmbedDataset(SeriesDataset):
             embedding_filename = glob.glob(embedding_filename, recursive=True)[-1]
 
             vectors = np.load(embedding_filename)
-            norms = np.linalg.norm(vectors, axis=1)
-            vectors[norms != np.inf] /= norms[norms != np.inf, np.newaxis]
-            good_vectors = vectors[norms != np.inf]
-            others = find_k_furthest_vectors(vectors, good_vectors, 1)
-
             _cog_dir["embeddings"] = vectors
-            _cog_dir["non_embeddings"] = others
+
             blocks_tall = _cog_dir.get("blocks_tall")
             blocks_wide = _cog_dir.get("blocks_wide")
             blocks = blocks_tall * blocks_wide
             assert blocks == _cog_dir.get("embeddings").shape[0]
-            assert blocks == _cog_dir.get("non_embeddings").shape[0]
 
 
     def __getitem__(self, index):
@@ -238,10 +217,5 @@ class SeriesEmbedDataset(SeriesDataset):
         len_groups = len(cog_dir.get("groups"))
         group_relative_index = cog_dir_relative_index // len_groups
         embedding = cog_dir.get("embeddings")[group_relative_index]
-        non_embedding = cog_dir.get("non_embeddings")[group_relative_index]
-        non_embedding = random_convex_combination(non_embedding)
 
-        embedding += np.random.normal(loc=0, scale=1e-3, size=embedding.shape)
-        non_embedding += np.random.normal(loc=0, scale=1e-3, size=non_embedding.shape)
-
-        return (imagery_a, imagery_b, embedding, non_embedding)
+        return (imagery_a, imagery_b, embedding)

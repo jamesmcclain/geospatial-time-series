@@ -31,6 +31,21 @@
 import torch
 
 
+class SpaceMatchLoss(torch.nn.Module):
+
+    def __init__(self):
+        super(SpaceMatchLoss, self).__init__()
+        self.mse = torch.nn.MSELoss()
+
+    def forward(self, x, y, z):
+        target = z @ z.t()
+        actualx = self.mse(x @ x.t(), target)
+        actualy = self.mse(y @ y.t(), target)
+        # actualxy = self.mse((x @ y.t()) + (y @ x.t()), target+target)
+        # return actualx + actualxy + actualy
+        return self.mse(x, y) + actualx + actualy
+
+
 class MaximumMeanDiscrepancyLoss(torch.nn.Module):
 
     def __init__(self):

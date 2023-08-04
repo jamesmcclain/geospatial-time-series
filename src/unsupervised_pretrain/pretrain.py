@@ -43,24 +43,14 @@ from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
 
 from datasets import SeriesDataset, SeriesEmbedDataset
-from models import (EmbeddingClassifier, SeriesEfficientNetb0,
-                    SeriesMobileNetv3, SeriesResNet18)
+from lossfunctions import SpaceMatchLoss
+from models import (Projection, SeriesEfficientNetb0, SeriesMobileNetv3,
+                    SeriesResNet18)
 
 
-def remove_empty_text_rows(a, b, c):
+def remove_empty_text_rows(a, b):
     mask = (a[:, 0] < torch.inf)
-    return a[mask], b[mask], c[mask]
-
-
-def loss_to_accuracy_approx(loss):
-    # Linear approximation
-    if loss <= 0.69:
-        # Linear interpolation between points (0, 100) and (0.69, 50)
-        accuracy = 100 - (loss / 0.69) * 50
-    else:
-        # Linear interpolation between points (0.69, 50) and (1, 0)
-        accuracy = 50 - ((loss - 0.69) / 0.31) * 50
-    return accuracy
+    return a[mask], b[mask]
 
 
 if __name__ == "__main__":
@@ -131,8 +121,9 @@ if __name__ == "__main__":
         model = torch.load(args.pth_in, map_location=device).to(device)
         log.info(f"Model weights loaded from {args.pth_in}")
 
-    # Classifier
-    classifier = EmbeddingClassifier(model.embedding_dim, 768).to(device)
+    # Projections
+    projection1 = Projection(model.embedding_dim).to(device)
+    projection2 = Projection(768).to(device)
 
     # Loss functions, optimizers, schedulers
     base_obj = losses.TripletMarginLoss().to(device)
@@ -145,9 +136,11 @@ if __name__ == "__main__":
         epochs=args.epochs,
     )
     if args.dataset == "embed-series":
-        obj2 = torch.nn.BCEWithLogitsLoss().to(device)
-        obj3 = torch.nn.MSELoss().to(device)
-        params = list(model.parameters()) + list(classifier.parameters())
+        obj2 = SpaceMatchLoss().to(device)
+        params = \
+            list(model.parameters()) + \
+            list(projection1.parameters()) + \
+            list(projection2.parameters())
         opt2 = torch.optim.Adam(params, lr=args.lr)
         sched2 = torch.optim.lr_scheduler.OneCycleLR(
             opt2,
@@ -159,16 +152,14 @@ if __name__ == "__main__":
         model.train()
 
         triplet_losses = []
-        class_losses = []
+        proj_losses = []
         for data in tqdm.tqdm(dataloader):
 
             if args.dataset == "embed-series":
-                imagery_a, imagery_b, embeddings_text, nonembeddings_text = data
+                imagery_a, imagery_b, embeddings_text = data
                 imagery_a = imagery_a.to(device)
                 imagery_b = imagery_b.to(device)
                 embeddings_text = embeddings_text.to(device)
-                nonembeddings_text = nonembeddings_text.to(device)
-                # embeddings_text = F.normalize(embeddings_text, dim=1)
             else:
                 imagery_a, imagery_b = data
                 imagery_a = imagery_a.to(device)
@@ -176,25 +167,15 @@ if __name__ == "__main__":
 
             # Classifier and body
             if args.dataset == "embed-series":
-                _embeddings_text, _nonembeddings_text, _imagery = remove_empty_text_rows(embeddings_text, nonembeddings_text, imagery_a)  # yapf: disable
+                _embeddings_text, _imagery = remove_empty_text_rows(embeddings_text, imagery_a)  # yapf: disable
                 if _embeddings_text.shape[0] > 0:
                     # yapf: disable
-                    assert _embeddings_text.shape[0] == _nonembeddings_text.shape[0]
                     assert _embeddings_text.shape[0] == _imagery.shape[0]
                     embeddings_visual = model(_imagery)
                     embeddings_visual = F.normalize(embeddings_visual, dim=1)
-                    if True:
-                        embeddings_visual2 = torch.cat([embeddings_visual, embeddings_visual], dim=0)
-                        embeddings_text2 = torch.cat([_embeddings_text, _nonembeddings_text], dim=0)
-                        n = embeddings_visual.shape[0]
-                        dtype = embeddings_visual.dtype
-                        targets = torch.cat([
-                            torch.ones((n, 1), dtype=dtype, device=device),
-                            torch.zeros((n, 1), dtype=dtype, device=device),
-                        ], dim=0)
-                    c = classifier(embeddings_visual2, embeddings_text2)
-                    loss2 = obj2(c, targets)
-                    class_losses.append(loss2.item())
+                    embeddings_visual = projection1(embeddings_visual)
+                    loss2 = obj2(embeddings_visual, projection2(_embeddings_text), _embeddings_text)
+                    proj_losses.append(loss2.item())
                     loss2.backward()
                     opt2.step()
                     opt2.zero_grad()
@@ -209,25 +190,15 @@ if __name__ == "__main__":
 
             # Classifier and body
             if args.dataset == "embed-series":
-                _embeddings_text, _nonembeddings_text, _imagery = remove_empty_text_rows(embeddings_text, nonembeddings_text, imagery_b)  # yapf: disable
+                _embeddings_text, _imagery = remove_empty_text_rows(embeddings_text, imagery_b)  # yapf: disable
                 if _embeddings_text.shape[0] > 0:
                     # yapf: disable
-                    assert _embeddings_text.shape[0] == _nonembeddings_text.shape[0]
                     assert _embeddings_text.shape[0] == _imagery.shape[0]
                     embeddings_visual = model(_imagery)
                     embeddings_visual = F.normalize(embeddings_visual, dim=0)
-                    if True:
-                        embeddings_visual2 = torch.cat([embeddings_visual, embeddings_visual], dim=0)
-                        embeddings_text2 = torch.cat([_embeddings_text, _nonembeddings_text], dim=0)
-                        n = embeddings_visual.shape[0]
-                        dtype = embeddings_visual.dtype
-                        targets = torch.cat([
-                            torch.ones((n, 1), dtype=dtype, device=device),
-                            torch.zeros((n, 1), dtype=dtype, device=device),
-                        ], dim=0)
-                    c = classifier(embeddings_visual2, embeddings_text2)
-                    loss2 = obj2(c, targets)
-                    class_losses.append(loss2.item())
+                    embeddings_visual = projection1(embeddings_visual)
+                    loss2 = obj2(embeddings_visual, projection2(_embeddings_text), _embeddings_text)
+                    proj_losses.append(loss2.item())
                     loss2.backward()
                     opt2.step()
                     opt2.zero_grad()
@@ -241,21 +212,24 @@ if __name__ == "__main__":
         if args.dataset != "embed-series":
             log.info(f"epoch={epoch:03} \t triplet={triplet_losses:1.5f}")
         elif args.dataset == "embed-series":
-            class_losses = np.mean(class_losses)
-            accuracy = loss_to_accuracy_approx(class_losses)
-            log.info(f"epoch={epoch:03} \t triplet={triplet_losses:1.5f} \t classification={class_losses:1.5f} ≈ {accuracy:.1f}%")  # yapf: disable
+            proj_losses = np.mean(proj_losses)
+            log.info(f"epoch={epoch:03} \t triplet={triplet_losses:1.5f} \t projection={proj_losses:1.5f}")  # yapf: disable
 
         if args.output_dir is not None:
             model_save_path = f"{args.output_dir}/{args.pth_out}"
-            classifier_save_path = model_save_path.replace(".pth", f"-classifier-{epoch}.pth")  # yapf: disable
+            projection1_save_path = model_save_path.replace(".pth", f"-projection1-{epoch}.pth")  # yapf: disable
+            projection2_save_path = model_save_path.replace(".pth", f"-projection2-{epoch}.pth")  # yapf: disable
             model_save_path = model_save_path.replace(".pth", f"-{epoch}.pth")  # yapf: disable
             torch.save(model, model_save_path)
-            torch.save(classifier, classifier_save_path)
+            torch.save(projection1, projection1_save_path)
+            torch.save(projection2, projection2_save_path)
 
     # Save the model after the last epoch if output_dir is provided
     if args.output_dir is not None:
         model_save_path = f"{args.output_dir}/{args.pth_out}"
         torch.save(model, model_save_path)
         log.info(f"Model saved to {model_save_path}")
-        classifier_save_path = model_save_path.replace(".pth", f"-classifier.pth")  # yapf: disable
-        torch.save(classifier, classifier_save_path)
+        projection1_save_path = model_save_path.replace(".pth", f"-projection1.pth")  # yapf: disable
+        projection2_save_path = model_save_path.replace(".pth", f"-projection2.pth")  # yapf: disable
+        torch.save(projection1, projection1_save_path)
+        torch.save(projection2, projection2_save_path)

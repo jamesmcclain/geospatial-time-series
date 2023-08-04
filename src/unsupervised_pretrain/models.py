@@ -34,6 +34,7 @@ from torchvision import models
 
 CH = 12
 D2 = 256
+N = 3
 
 
 def freeze(m: torch.nn.Module) -> torch.nn.Module:
@@ -46,23 +47,16 @@ def unfreeze(m: torch.nn.Module) -> torch.nn.Module:
         p.requires_grad = True
 
 
-class EmbeddingClassifier(torch.nn.Module):
+class Projection(torch.nn.Module):
 
-    def __init__(self, dim1, dim2):
-        super(EmbeddingClassifier, self).__init__()
-        self.net = torch.nn.Sequential(
-            torch.nn.Dropout(0.20),
-            torch.nn.Linear(dim1 + dim2, 1024),
-            torch.nn.ReLU(),
-            torch.nn.Linear(1024, 512),
-            torch.nn.ReLU(),
-            torch.nn.Linear(512, 256),
-            torch.nn.ReLU(),
-            torch.nn.Linear(256, 1),
-        )
+    def __init__(self, dim):
+        super(Projection, self).__init__()
+        between = (dim + 2) // 2
+        self.net = torch.nn.Sequential(torch.nn.Linear(dim, between),
+                                       torch.nn.ReLU(),
+                                       torch.nn.Linear(between, N))
 
-    def forward(self, x, y):
-        x = torch.cat([x, y], dim=1)
+    def forward(self, x):
         return self.net(x)
 
 
