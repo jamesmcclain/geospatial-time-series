@@ -43,9 +43,7 @@ from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
 
 from datasets import SeriesDataset, SeriesEmbedDataset
-from lossfunctions import SpaceMatchLoss
-from models import (Projection, SeriesEfficientNetb0, SeriesMobileNetv3,
-                    SeriesResNet18)
+from models import (SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18)
 
 
 def remove_empty_text_rows(a, b):
@@ -121,10 +119,6 @@ if __name__ == "__main__":
         model = torch.load(args.pth_in, map_location=device).to(device)
         log.info(f"Model weights loaded from {args.pth_in}")
 
-    # Projections
-    projection1 = Projection(model.embedding_dim).to(device)
-    projection2 = Projection(768).to(device)
-
     # Loss functions, optimizers, schedulers
     base_obj = losses.TripletMarginLoss().to(device)
     obj1 = losses.SelfSupervisedLoss(base_obj).to(device)
@@ -136,11 +130,8 @@ if __name__ == "__main__":
         epochs=args.epochs,
     )
     if args.dataset == "embed-series":
-        obj2 = SpaceMatchLoss().to(device)
-        params = \
-            list(model.parameters()) + \
-            list(projection1.parameters()) + \
-            list(projection2.parameters())
+        params = list(model.parameters())
+        obj2 = torch.nn.MSELoss().to(device)
         opt2 = torch.optim.Adam(params, lr=args.lr)
         sched2 = torch.optim.lr_scheduler.OneCycleLR(
             opt2,
@@ -152,7 +143,6 @@ if __name__ == "__main__":
         model.train()
 
         triplet_losses = []
-        proj_losses = []
         for data in tqdm.tqdm(dataloader):
 
             if args.dataset == "embed-series":
@@ -173,10 +163,7 @@ if __name__ == "__main__":
                     assert _embeddings_text.shape[0] == _imagery.shape[0]
                     embeddings_visual = model(_imagery)
                     embeddings_visual = F.normalize(embeddings_visual, dim=1)
-                    embeddings_visual = projection1(embeddings_visual)
-                    loss2 = obj2(embeddings_visual, projection2(_embeddings_text), _embeddings_text)
-                    proj_losses.append(loss2.item())
-                    loss2.backward()
+                    loss2.backward()  # XXX
                     opt2.step()
                     opt2.zero_grad()
                     # yapf: enable
@@ -196,10 +183,7 @@ if __name__ == "__main__":
                     assert _embeddings_text.shape[0] == _imagery.shape[0]
                     embeddings_visual = model(_imagery)
                     embeddings_visual = F.normalize(embeddings_visual, dim=0)
-                    embeddings_visual = projection1(embeddings_visual)
-                    loss2 = obj2(embeddings_visual, projection2(_embeddings_text), _embeddings_text)
-                    proj_losses.append(loss2.item())
-                    loss2.backward()
+                    loss2.backward()  # XXX
                     opt2.step()
                     opt2.zero_grad()
                     # yapf: enable
@@ -212,24 +196,15 @@ if __name__ == "__main__":
         if args.dataset != "embed-series":
             log.info(f"epoch={epoch:03} \t triplet={triplet_losses:1.5f}")
         elif args.dataset == "embed-series":
-            proj_losses = np.mean(proj_losses)
-            log.info(f"epoch={epoch:03} \t triplet={triplet_losses:1.5f} \t projection={proj_losses:1.5f}")  # yapf: disable
+            log.info(f"epoch={epoch:03} \t triplet={triplet_losses:1.5f} \t ")  # yapf: disable
 
         if args.output_dir is not None:
             model_save_path = f"{args.output_dir}/{args.pth_out}"
-            projection1_save_path = model_save_path.replace(".pth", f"-projection1-{epoch}.pth")  # yapf: disable
-            projection2_save_path = model_save_path.replace(".pth", f"-projection2-{epoch}.pth")  # yapf: disable
             model_save_path = model_save_path.replace(".pth", f"-{epoch}.pth")  # yapf: disable
             torch.save(model, model_save_path)
-            torch.save(projection1, projection1_save_path)
-            torch.save(projection2, projection2_save_path)
 
     # Save the model after the last epoch if output_dir is provided
     if args.output_dir is not None:
         model_save_path = f"{args.output_dir}/{args.pth_out}"
         torch.save(model, model_save_path)
         log.info(f"Model saved to {model_save_path}")
-        projection1_save_path = model_save_path.replace(".pth", f"-projection1.pth")  # yapf: disable
-        projection2_save_path = model_save_path.replace(".pth", f"-projection2.pth")  # yapf: disable
-        torch.save(projection1, projection1_save_path)
-        torch.save(projection2, projection2_save_path)

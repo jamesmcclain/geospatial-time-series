@@ -47,19 +47,6 @@ def unfreeze(m: torch.nn.Module) -> torch.nn.Module:
         p.requires_grad = True
 
 
-class Projection(torch.nn.Module):
-
-    def __init__(self, dim):
-        super(Projection, self).__init__()
-        between = (dim + 2) // 2
-        self.net = torch.nn.Sequential(torch.nn.Linear(dim, between),
-                                       torch.nn.ReLU(),
-                                       torch.nn.Linear(between, N))
-
-    def forward(self, x):
-        return self.net(x)
-
-
 class SeriesModel(torch.nn.Module):
 
     def __init__(self):
