@@ -29,39 +29,47 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import torch
+import torch.nn.functional as F
 
 
-class InnerProductMatchLoss(torch.nn.Module):
+class SphericalAutoencoder(torch.nn.Module):
 
-    def __init__(self):
-        super(InnerProductMatchLoss, self).__init__()
-        self.mse_loss = torch.nn.MSELoss()
+    def __init__(self, input_dim, latent_dim):
+        super(SphericalAutoencoder, self).__init__()
 
-    def forward(self, x, y):
-        target = y @ y.t()
-        actual = x @ x.t()
-        return self.mse_loss(actual, target)
+        # Encoder
+        self.encoder = torch.nn.Sequential(
+            torch.nn.Linear(input_dim, 128),
+            torch.nn.ReLU(),
+            torch.nn.Linear(128, 64),
+            torch.nn.ReLU(),
+            torch.nn.Linear(64, latent_dim),
+        )
+
+        # Decoder
+        self.decoder = torch.nn.Sequential(
+            torch.nn.Linear(latent_dim, 64),
+            torch.nn.ReLU(),
+            torch.nn.Linear(64, 128),
+            torch.nn.ReLU(),
+            torch.nn.Linear(128, input_dim),
+        )
+
+    def forward(self, x):
+        z = self.encoder(x)
+        z = z / z.norm(dim=1, keepdim=True)  # yapf: disable
+        x_recon = self.decoder(z)
+        return x_recon, z
 
 
-class MaximumMeanDiscrepancyLoss(torch.nn.Module):
+class MultiViewAutoencoder(torch.nn.Module):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, input_dim_1, input_dim_2, shared_dim):
+        super(MultiViewAutoencoder, self).__init__()
+        self.autoencoder_1 = SphericalAutoencoder(input_dim_1, shared_dim)
+        self.autoencoder_2 = SphericalAutoencoder(input_dim_2, shared_dim)
 
-    def gaussian_kernel(self, a, b):
-        square_dist = (a.unsqueeze(0) - b.unsqueeze(1)).pow(2).sum(dim=2)
-        kernel_val = (-square_dist).exp()
-        return kernel_val
-
-    def forward(self, x, y):
-        assert x.shape[0] == y.shape[0]
-
-        kernel_x = self.gaussian_kernel(x, x)
-        kernel_y = self.gaussian_kernel(y, y)
-        kernel_xy = self.gaussian_kernel(x, y)
-
-        kernel_x_mean = torch.mean(kernel_x)
-        kernel_y_mean = torch.mean(kernel_y)
-        kernel_xy_mean = torch.mean(kernel_xy)
-
-        return kernel_x_mean - (2 * kernel_xy_mean) + kernel_y_mean
+    def forward(self, x1, x2):
+        x1_recon, z1 = self.autoencoder_1(x1)
+        x2_recon, z2 = self.autoencoder_2(x2)
+        return x1_recon, x2_recon, z1, z2

@@ -34,6 +34,7 @@ from torchvision import models
 
 CH = 12
 D2 = 256
+N = 3
 
 
 def freeze(m: torch.nn.Module) -> torch.nn.Module:
@@ -44,30 +45,6 @@ def freeze(m: torch.nn.Module) -> torch.nn.Module:
 def unfreeze(m: torch.nn.Module) -> torch.nn.Module:
     for p in m.parameters():
         p.requires_grad = True
-
-
-class Hat(torch.nn.Module):
-
-    def __init__(self, dim1, dim2):
-        super(Hat, self).__init__()
-        between = (dim1 + dim2) // 2
-        # self.net = torch.nn.Sequential(
-        #     torch.nn.Linear(dim1, between),
-        #     torch.nn.ReLU(),
-        #     torch.nn.Dropout(0.2),
-        #     torch.nn.Linear(between, between),
-        #     torch.nn.ReLU(),
-        #     # torch.nn.BatchNorm1d(between),
-        #     torch.nn.Dropout(0.2),
-        #     torch.nn.Linear(between, between),
-        #     torch.nn.ReLU(),
-        #     # torch.nn.BatchNorm1d(between),
-        #     torch.nn.Linear(between, dim2),
-        # )
-        self.net = torch.nn.Linear(dim1, dim2)
-
-    def forward(self, x):
-        return self.net(x)
 
 
 class SeriesModel(torch.nn.Module):

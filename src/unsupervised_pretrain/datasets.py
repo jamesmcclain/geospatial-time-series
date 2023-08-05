@@ -37,68 +37,12 @@ import rasterio as rio
 import torch
 from pyproj import Proj
 
-# from multiprocessing import Pool
-
 
 def split_list(lst, chunk_size):
     sublists = []
     for i in range(0, len(lst), chunk_size):
         sublists.append(lst[i:i + chunk_size])
     return sublists
-
-
-# # Read the imagery
-# def read_file(filename, w):
-#     with rio.open(filename, "r") as ds:
-#         return ds.read(window=w).astype(np.float32)
-
-
-class EmbedEmbedDataset(torch.utils.data.Dataset):
-
-    def __init__(self, visual_npy, text_npy):
-        self.visual_embeddings = np.load(visual_npy)
-        self.text_embeddings = np.load(text_npy)
-        mask = (self.text_embeddings[:, 0] < np.inf)
-        self.visual_embeddings = self.visual_embeddings[mask]
-        self.text_embeddings = self.text_embeddings[mask]
-        assert self.visual_embeddings.shape[0] == self.text_embeddings.shape[0]
-
-    def __len__(self):
-        return self.visual_embeddings.shape[0]
-
-    def __getitem__(self, index):
-        visual_embedding = self.visual_embeddings[index]
-        text_embedding = self.text_embeddings[index]
-        return (visual_embedding, text_embedding)
-
-
-class DigestDataset(torch.utils.data.Dataset):
-
-    def __init__(self, pt_dirs: List[str]):
-        self.pt_list = []
-        for pt_dir in pt_dirs:
-            pt_list = glob.glob(f"{pt_dir}/**/*.pt", recursive=True)
-            self.pt_list += pt_list
-
-    def __len__(self):
-        return len(self.pt_list)
-
-    def __getitem__(self, index):
-        if index >= len(self.pt_list):
-            raise StopIteration()
-
-        this_pt = self.pt_list[index]
-        this_data = torch.load(this_pt)
-
-        pt_dir, pt_filename = this_pt.rsplit("/", 1)
-        cog_dir, group, y, x_rest = pt_filename.split("-")
-        group = int(group)
-        try:
-            that_data = torch.load(f"{pt_dir}/{cog_dir}-{group+1}-{y}-{x_rest}")  # yapf: disable
-        except:
-            that_data = torch.load(f"{pt_dir}/{cog_dir}-0-{y}-{x_rest}")
-
-        return (this_data, that_data)
 
 
 class SeriesDataset(torch.utils.data.Dataset):
@@ -109,14 +53,12 @@ class SeriesDataset(torch.utils.data.Dataset):
         size: int = 512,
         series_length: int = 5,
         text_mode: bool = False,
-        dump_mode: bool = False,
     ):
         super().__init__()
         self.size = size
         self.dataset_length = 0
         self.cog_dirs = []
         self.text_mode = text_mode
-        self.dump_mode = dump_mode
 
         for cog_dir in sorted(cog_dirs):
 
@@ -224,26 +166,16 @@ class SeriesDataset(torch.utils.data.Dataset):
                 imagery_a.append(ds.read(window=w).astype(np.float32))
         imagery_a = torch.from_numpy(np.stack(imagery_a, axis=0))
 
-        if self.dump_mode:
-            return imagery_a
-
         imagery_b = []
         for filename_b in group_b:
             with rio.open(filename_b, "r") as ds:
                 imagery_b.append(ds.read(window=w).astype(np.float32))
         imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
 
-        # pool = Pool()
-        # imagery_a = pool.starmap(read_file, [(filename, w) for filename in group_a])
-        # imagery_b = pool.starmap(read_file, [(filename, w) for filename in group_b])
-        # imagery_a = torch.from_numpy(np.stack(imagery_a, axis=0))
-        # imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
-        # pool.close()
-        # pool.join()
-
         assert imagery_a.shape[2] != 0 and imagery_b.shape[2] != 0
 
         return (imagery_a, imagery_b)
+
 
 class SeriesEmbedDataset(SeriesDataset):
 
@@ -251,7 +183,6 @@ class SeriesEmbedDataset(SeriesDataset):
                  cog_dirs: List[str],
                  size: int = 512,
                  series_length: int = 5,
-                 dump_mode: bool = False,
                  ):
 
         cog_dirs = sorted(cog_dirs)
@@ -260,7 +191,6 @@ class SeriesEmbedDataset(SeriesDataset):
             cog_dirs = cog_dirs,
             size = size,
             series_length = series_length,
-            dump_mode = dump_mode
         )
 
         for cog_dir, _cog_dir in zip(cog_dirs, self.cog_dirs):
@@ -270,7 +200,10 @@ class SeriesEmbedDataset(SeriesDataset):
             embedding_filename = f"{cog_dir_parts[-1]}-{size}.npy"
             embedding_filename = f"{cog_dir}/**/{embedding_filename}"
             embedding_filename = glob.glob(embedding_filename, recursive=True)[-1]
-            _cog_dir["embeddings"] = np.load(embedding_filename)
+
+            vectors = np.load(embedding_filename)
+            _cog_dir["embeddings"] = vectors
+
             blocks_tall = _cog_dir.get("blocks_tall")
             blocks_wide = _cog_dir.get("blocks_wide")
             blocks = blocks_tall * blocks_wide
@@ -280,15 +213,9 @@ class SeriesEmbedDataset(SeriesDataset):
     def __getitem__(self, index):
 
         cog_dir, cog_dir_relative_index = self.cog_dir_and_groups(index)
-        if self.dump_mode:
-            imagery_a = super().__getitem__(index)
-        else:
-            imagery_a, imagery_b = super().__getitem__(index)
+        imagery_a, imagery_b = super().__getitem__(index)
         len_groups = len(cog_dir.get("groups"))
         group_relative_index = cog_dir_relative_index // len_groups
         embedding = cog_dir.get("embeddings")[group_relative_index]
 
-        if self.dump_mode:
-            return (imagery_a, embedding)
-        else:
-            return (imagery_a, imagery_b, embedding)
+        return (imagery_a, imagery_b, embedding)
