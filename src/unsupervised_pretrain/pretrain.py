@@ -42,8 +42,9 @@ import tqdm
 from pytorch_metric_learning import losses
 from torch.utils.data import DataLoader
 
+from autoencoders import MultiViewAutoencoder
 from datasets import SeriesDataset, SeriesEmbedDataset
-from models import (SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18)
+from models import SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18
 
 
 def remove_empty_text_rows(a, b):
@@ -119,6 +120,11 @@ if __name__ == "__main__":
         model = torch.load(args.pth_in, map_location=device).to(device)
         log.info(f"Model weights loaded from {args.pth_in}")
 
+    # Autoencoder
+    E = 768  # Instructor-XL embedding dimensions
+    LATENT = 8  # Dimensions of common latent space
+    autoencoder = MultiViewAutoencoder(model.embedding_dim, E, LATENT).to(device)
+
     # Loss functions, optimizers, schedulers
     base_obj = losses.TripletMarginLoss().to(device)
     obj1 = losses.SelfSupervisedLoss(base_obj).to(device)
@@ -130,8 +136,8 @@ if __name__ == "__main__":
         epochs=args.epochs,
     )
     if args.dataset == "embed-series":
-        params = list(model.parameters())
         obj2 = torch.nn.MSELoss().to(device)
+        params = list(model.parameters()) + list(autoencoder.parameters())  # yapf: disable
         opt2 = torch.optim.Adam(params, lr=args.lr)
         sched2 = torch.optim.lr_scheduler.OneCycleLR(
             opt2,
@@ -140,53 +146,70 @@ if __name__ == "__main__":
             epochs=args.epochs)
 
     for epoch in range(0, args.epochs):
+
         model.train()
+        if args.dataset == "embed-series":
+            autoencoder.train()
 
         triplet_losses = []
+        autoencoder_losses = []
+
         for data in tqdm.tqdm(dataloader):
 
             if args.dataset == "embed-series":
-                imagery_a, imagery_b, embeddings_text = data
-                imagery_a = imagery_a.to(device)
-                imagery_b = imagery_b.to(device)
-                embeddings_text = embeddings_text.to(device)
+                imagery0, imagery1, text_embs = data
+                imagery0 = imagery0.to(device)
+                imagery1 = imagery1.to(device)
+                text_embs = text_embs.to(device)
             else:
-                imagery_a, imagery_b = data
-                imagery_a = imagery_a.to(device)
-                imagery_b = imagery_b.to(device)
+                imagery0, imagery1 = data
+                imagery0 = imagery0.to(device)
+                imagery1 = imagery1.to(device)
 
-            # Classifier and body
+            # Autoencoder
             if args.dataset == "embed-series":
-                _embeddings_text, _imagery = remove_empty_text_rows(embeddings_text, imagery_a)  # yapf: disable
-                if _embeddings_text.shape[0] > 0:
-                    # yapf: disable
-                    assert _embeddings_text.shape[0] == _imagery.shape[0]
-                    embeddings_visual = model(_imagery)
-                    embeddings_visual = F.normalize(embeddings_visual, dim=1)
-                    loss2.backward()  # XXX
+                # yapf: disable
+                _text_embs, _imagery = remove_empty_text_rows(text_embs, imagery0)
+                if _text_embs.shape[0] > 0:
+                    assert _text_embs.shape[0] == _imagery.shape[0]
+                    _visual_embs = model(_imagery)
+                    _visual_embs = F.normalize(_visual_embs, dim=1)
+                    res = autoencoder(_visual_embs, _text_embs)
+                    loss2 = 0.
+                    loss2 += obj2(res[0], _visual_embs)
+                    loss2 += obj2(res[1], _text_embs)
+                    loss2 += 3 * obj2(res[2], res[3])
+                    autoencoder_losses.append(loss2.item())
+                    loss2.backward()
                     opt2.step()
                     opt2.zero_grad()
-                    # yapf: enable
+                # yapf: enable
 
             # Body
-            loss1 = obj1(model(imagery_a), model(imagery_b))
+            loss1 = obj1(model(imagery0), model(imagery1))
             triplet_losses.append(loss1.item())
             loss1.backward()
             opt1.step()
             opt1.zero_grad()
 
-            # Classifier and body
+            # Autoencoder
             if args.dataset == "embed-series":
-                _embeddings_text, _imagery = remove_empty_text_rows(embeddings_text, imagery_b)  # yapf: disable
-                if _embeddings_text.shape[0] > 0:
-                    # yapf: disable
-                    assert _embeddings_text.shape[0] == _imagery.shape[0]
-                    embeddings_visual = model(_imagery)
-                    embeddings_visual = F.normalize(embeddings_visual, dim=0)
-                    loss2.backward()  # XXX
+                # yapf: disable
+                _text_embs, _imagery = remove_empty_text_rows(text_embs, imagery1)
+                if _text_embs.shape[0] > 0:
+                    assert _text_embs.shape[0] == _imagery.shape[0]
+                    _visual_embs = model(_imagery)
+                    _visual_embs = F.normalize(_visual_embs, dim=1)
+                    res = autoencoder(_visual_embs, _text_embs)
+                    loss2 = 0.
+                    loss2 += obj2(res[0], _visual_embs)
+                    loss2 += obj2(res[1], _text_embs)
+                    loss2 += 3 * obj2(res[2], res[3])
+                    autoencoder_losses.append(loss2.item())
+                    loss2.backward()
                     opt2.step()
                     opt2.zero_grad()
-                    # yapf: enable
+                # yapf: enable
 
             # Step schedulers
             sched1.step()
@@ -196,15 +219,21 @@ if __name__ == "__main__":
         if args.dataset != "embed-series":
             log.info(f"epoch={epoch:03} \t triplet={triplet_losses:1.5f}")
         elif args.dataset == "embed-series":
-            log.info(f"epoch={epoch:03} \t triplet={triplet_losses:1.5f} \t ")  # yapf: disable
+            autoencoder_losses = np.mean(autoencoder_losses)
+            log.info(f"epoch={epoch:03} \t triplet={triplet_losses:1.5f} \t autoencoder={autoencoder_losses:1.5f}")  # yapf: disable
 
-        if args.output_dir is not None:
+        if args.output_dir is not None and epoch < (args.epochs - 1):
             model_save_path = f"{args.output_dir}/{args.pth_out}"
+            autoencoder_save_path = model_save_path.replace(".pth", f"-autoencoder-{epoch}.pth")  # yapf: disable
+            torch.save(autoencoder, autoencoder_save_path)
             model_save_path = model_save_path.replace(".pth", f"-{epoch}.pth")  # yapf: disable
             torch.save(model, model_save_path)
 
     # Save the model after the last epoch if output_dir is provided
     if args.output_dir is not None:
         model_save_path = f"{args.output_dir}/{args.pth_out}"
+        autoencoder_save_path = model_save_path.replace(".pth", f"-autoencoder.pth")  # yapf: disable
+        torch.save(autoencoder, autoencoder_save_path)
+        log.info(f"Autoencoder saved to {autoencoder_save_path}")
         torch.save(model, model_save_path)
         log.info(f"Model saved to {model_save_path}")
