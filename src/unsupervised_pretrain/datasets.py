@@ -52,6 +52,7 @@ class SeriesDataset(torch.utils.data.Dataset):
         cog_dirs: List[str],
         size: int = 512,
         series_length: int = 5,
+        bands=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
         text_mode: bool = False,
     ):
         super().__init__()
@@ -59,6 +60,7 @@ class SeriesDataset(torch.utils.data.Dataset):
         self.dataset_length = 0
         self.cog_dirs = []
         self.text_mode = text_mode
+        self.bands = copy.copy(bands)
 
         for cog_dir in sorted(cog_dirs):
 
@@ -163,13 +165,13 @@ class SeriesDataset(torch.utils.data.Dataset):
         imagery_a = []
         for filename_a in group_a:
             with rio.open(filename_a, "r") as ds:
-                imagery_a.append(ds.read(window=w).astype(np.float32))
+                imagery_a.append(ds.read(self.bands, window=w).astype(np.float32))
         imagery_a = torch.from_numpy(np.stack(imagery_a, axis=0))
 
         imagery_b = []
         for filename_b in group_b:
             with rio.open(filename_b, "r") as ds:
-                imagery_b.append(ds.read(window=w).astype(np.float32))
+                imagery_b.append(ds.read(self.bands, window=w).astype(np.float32))
         imagery_b = torch.from_numpy(np.stack(imagery_b, axis=0))
 
         assert imagery_a.shape[2] != 0 and imagery_b.shape[2] != 0
@@ -183,6 +185,7 @@ class SeriesEmbedDataset(SeriesDataset):
                  cog_dirs: List[str],
                  size: int = 512,
                  series_length: int = 5,
+                 bands= [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
                  ):
 
         cog_dirs = sorted(cog_dirs)
@@ -191,6 +194,7 @@ class SeriesEmbedDataset(SeriesDataset):
             cog_dirs = cog_dirs,
             size = size,
             series_length = series_length,
+            bands = bands,
         )
 
         for cog_dir, _cog_dir in zip(cog_dirs, self.cog_dirs):

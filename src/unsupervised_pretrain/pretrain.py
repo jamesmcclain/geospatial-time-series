@@ -58,6 +58,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pretrain a model using a bunch unlabeled Sentinel-2 time series")
     parser.add_argument("cog_dirs", nargs="+", type=str, help="Paths to the data")
     parser.add_argument("--architecture", type=str, default="resnet18", choices=["resnet18", "mobilenetv3", "efficientnetb0"], help="The model architecture to use (default: resnet18)")
+    parser.add_argument("--bands", type=int, nargs="+", default=None, help="The Sentinel-2 bands to use (1 indexed)")
     parser.add_argument("--batch-size", type=int, default=7, help="The batch size (default: 7)")
     parser.add_argument("--dataset", type=str, required=True, choices=["embed-series", "series", "digest"], help="The type of data found in the data directories")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="The device to use for training (default: cuda)")
@@ -74,16 +75,24 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Dataset
+    if args.bands is None:
+        args.bands = list(range(1, 12 + 1))
     if args.dataset == "series":
         assert args.size % 64 == 0
-        dataset = SeriesDataset(args.cog_dirs,
-                                size=args.size,
-                                series_length=args.series_length)
+        dataset = SeriesDataset(
+            args.cog_dirs,
+            size=args.size,
+            series_length=args.series_length,
+            bands=args.bands,
+        )
     elif args.dataset == "embed-series":
         assert args.size % 64 == 0
-        dataset = SeriesEmbedDataset(args.cog_dirs,
-                                     size=args.size,
-                                     series_length=args.series_length)
+        dataset = SeriesEmbedDataset(
+            args.cog_dirs,
+            size=args.size,
+            series_length=args.series_length,
+            bands=args.bands,
+        )
     elif args.dataset == "digest":
         dataset = DigestDataset(args.cog_dirs)
 
@@ -111,11 +120,14 @@ if __name__ == "__main__":
     # Model
     if args.pth_in is None:
         if args.architecture == "resnet18":
-            model = SeriesResNet18(pretrained=args.pretrained).to(device)
+            model = SeriesResNet18(pretrained=args.pretrained,
+                                   channels=len(args.bands)).to(device)
         elif args.architecture == "mobilenetv3":
-            model = SeriesMobileNetv3(pretrained=args.pretrained).to(device)
+            model = SeriesMobileNetv3(pretrained=args.pretrained,
+                                      channels=len(args.bands)).to(device)
         elif args.architecture == "efficientnetb0":
-            model = SeriesEfficientNetb0(pretrained=args.pretrained).to(device)
+            model = SeriesEfficientNetb0(pretrained=args.pretrained,
+                                         channels=len(args.bands)).to(device)
     elif args.pth_in:
         model = torch.load(args.pth_in, map_location=device).to(device)
         log.info(f"Model weights loaded from {args.pth_in}")
@@ -123,7 +135,7 @@ if __name__ == "__main__":
     # Autoencoder
     E = 768  # Instructor-XL embedding dimensions
     LATENT = 8  # Dimensions of common latent space
-    autoencoder = MultiViewAutoencoder(model.embedding_dim, E, LATENT).to(device)
+    autoencoder = MultiViewAutoencoder(model.embedding_dim, E, LATENT).to(device)  # yapf: disable
 
     # Loss functions, optimizers, schedulers
     base_obj = losses.TripletMarginLoss().to(device)

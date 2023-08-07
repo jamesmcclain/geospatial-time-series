@@ -77,7 +77,7 @@ class SeriesModel(torch.nn.Module):
 
 class SeriesEfficientNetb0(SeriesModel):
 
-    def __init__(self, pretrained: bool = True):
+    def __init__(self, pretrained: bool = True, channels: int = CH):
         super(SeriesEfficientNetb0, self).__init__()
 
         # EfficientNet b0
@@ -89,7 +89,7 @@ class SeriesEfficientNetb0(SeriesModel):
         )
 
         # Change number of input channels
-        net.features[0][0] = torch.nn.Conv2d(CH,
+        net.features[0][0] = torch.nn.Conv2d(channels,
                                              32,
                                              kernel_size=(3, 3),
                                              stride=(2, 2),
@@ -107,7 +107,7 @@ class SeriesEfficientNetb0(SeriesModel):
 
 class SeriesMobileNetv3(SeriesModel):
 
-    def __init__(self, pretrained: bool = True):
+    def __init__(self, pretrained: bool = True, channels: int = CH):
         super(SeriesMobileNetv3, self).__init__()
 
         # MobileNet
@@ -119,7 +119,7 @@ class SeriesMobileNetv3(SeriesModel):
         )
 
         # Change number of input channels
-        net.features[0][0] = torch.nn.Conv2d(CH,
+        net.features[0][0] = torch.nn.Conv2d(channels,
                                              16,
                                              kernel_size=(3, 3),
                                              stride=(2, 2),
@@ -137,7 +137,7 @@ class SeriesMobileNetv3(SeriesModel):
 
 class SeriesResNet18(SeriesModel):
 
-    def __init__(self, pretrained: bool = True):
+    def __init__(self, pretrained: bool = True, channels: int = CH):
         super(SeriesResNet18, self).__init__()
 
         # ResNet 18
@@ -145,7 +145,7 @@ class SeriesResNet18(SeriesModel):
         self.net = models.resnet18(weights=weights)
 
         # Change number of input channels
-        self.net.conv1 = torch.nn.Conv2d(CH,
+        self.net.conv1 = torch.nn.Conv2d(channels,
                                          64,
                                          kernel_size=(7, 7),
                                          stride=(2, 2),
