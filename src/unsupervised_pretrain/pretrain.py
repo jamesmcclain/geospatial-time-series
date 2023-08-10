@@ -44,7 +44,7 @@ from torch.utils.data import DataLoader
 
 from autoencoders import MultiViewAutoencoder
 from datasets import SeriesDataset, SeriesEmbedDataset
-from models import SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18
+from models import SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18, SeriesResNet34, SeriesResNet50
 
 
 def remove_empty_text_rows(a, b):
@@ -57,8 +57,8 @@ if __name__ == "__main__":
     # Command line arguments
     parser = argparse.ArgumentParser(description="Pretrain a model using a bunch unlabeled Sentinel-2 time series")
     parser.add_argument("cog_dirs", nargs="+", type=str, help="Paths to the data")
-    parser.add_argument("--architecture", type=str, default="resnet18", choices=["resnet18", "mobilenetv3", "efficientnetb0"], help="The model architecture to use (default: resnet18)")
-    parser.add_argument("--bands", type=int, nargs="+", default=None, help="The Sentinel-2 bands to use (1 indexed)")
+    parser.add_argument("--architecture", type=str, default="resnet18", choices=["resnet18", "resnet34", "resnet50", "mobilenetv3", "efficientnetb0"], help="The model architecture to use (default: resnet18)")
+    parser.add_argument("--bands", type=int, nargs="+", default=list(range(1, 12 + 1)), help="The Sentinel-2 bands to use (1 indexed)")
     parser.add_argument("--batch-size", type=int, default=7, help="The batch size (default: 7)")
     parser.add_argument("--dataset", type=str, required=True, choices=["embed-series", "series", "digest"], help="The type of data found in the data directories")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="The device to use for training (default: cuda)")
@@ -70,13 +70,12 @@ if __name__ == "__main__":
     parser.add_argument("--pth-in", type=str, help="Optional path to a .pth file to use as a starting point for model training")
     parser.add_argument("--pth-out", type=str, default="model.pth", help="The name of the output .pth file (default: model.pth)")
     parser.add_argument("--series-length", type=int, default=8, help="The number of time steps in each sample (default: 8)")
+    parser.add_argument("--latent-dims", type=int, default=8, help="The number of shared latent dimensions (default: 8)")
     parser.add_argument("--size", type=int, default=512, help="The tile size (default: 512)")
     # yapf: enable
     args = parser.parse_args()
 
     # Dataset
-    if args.bands is None:
-        args.bands = list(range(1, 12 + 1))
     if args.dataset == "series":
         assert args.size % 64 == 0
         dataset = SeriesDataset(
@@ -122,6 +121,12 @@ if __name__ == "__main__":
         if args.architecture == "resnet18":
             model = SeriesResNet18(pretrained=args.pretrained,
                                    channels=len(args.bands)).to(device)
+        elif args.architecture == "resnet34":
+            model = SeriesResNet34(pretrained=args.pretrained,
+                                   channels=len(args.bands)).to(device)
+        elif args.architecture == "resnet50":
+            model = SeriesResNet50(pretrained=args.pretrained,
+                                   channels=len(args.bands)).to(device)
         elif args.architecture == "mobilenetv3":
             model = SeriesMobileNetv3(pretrained=args.pretrained,
                                       channels=len(args.bands)).to(device)
@@ -134,8 +139,12 @@ if __name__ == "__main__":
 
     # Autoencoder
     E = 768  # Instructor-XL embedding dimensions
-    LATENT = 8  # Dimensions of common latent space
-    autoencoder = MultiViewAutoencoder(model.embedding_dim, E, LATENT).to(device)  # yapf: disable
+    # LATENT = 8  # Dimensions of common latent space
+    autoencoder = MultiViewAutoencoder(
+        model.embedding_dim,
+        E,
+        args.latent_dims,
+    ).to(device)  # yapf: disable
 
     # Loss functions, optimizers, schedulers
     base_obj = losses.TripletMarginLoss().to(device)
@@ -147,6 +156,7 @@ if __name__ == "__main__":
         steps_per_epoch=len(dataloader),
         epochs=args.epochs,
     )
+    scaler1 = torch.cuda.amp.GradScaler()
     if args.dataset == "embed-series":
         obj2 = torch.nn.MSELoss().to(device)
         params = list(model.parameters()) + list(autoencoder.parameters())  # yapf: disable
@@ -156,6 +166,7 @@ if __name__ == "__main__":
             max_lr=args.lr,
             steps_per_epoch=len(dataloader),
             epochs=args.epochs)
+        scaler2 = torch.cuda.amp.GradScaler()
 
     for epoch in range(0, args.epochs):
 
@@ -184,44 +195,49 @@ if __name__ == "__main__":
                 _text_embs, _imagery = remove_empty_text_rows(text_embs, imagery0)
                 if _text_embs.shape[0] > 0:
                     assert _text_embs.shape[0] == _imagery.shape[0]
-                    _visual_embs = model(_imagery)
-                    _visual_embs = F.normalize(_visual_embs, dim=1)
-                    res = autoencoder(_visual_embs, _text_embs)
-                    loss2 = 0.
-                    loss2 += obj2(res[0], _visual_embs)
-                    loss2 += obj2(res[1], _text_embs)
-                    loss2 += 3 * obj2(res[2], res[3])
+                    with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+                        _visual_embs = model(_imagery)
+                        _visual_embs = F.normalize(_visual_embs, dim=1)
+                        res = autoencoder(_visual_embs, _text_embs)
+                        loss2 = 0.
+                        loss2 += obj2(res[0], _visual_embs)
+                        loss2 += obj2(res[1], _text_embs)
+                        loss2 += 3 * obj2(res[2], res[3])
                     autoencoder_losses.append(loss2.item())
-                    loss2.backward()
-                    opt2.step()
+                    scaler2.scale(loss2).backward()
+                    scaler2.step(opt2)
+                    scaler2.update()
                     opt2.zero_grad()
                 # yapf: enable
 
             # Body
-            loss1 = obj1(model(imagery0), model(imagery1))
+            with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+                loss1 = obj1(model(imagery0), model(imagery1))
             triplet_losses.append(loss1.item())
-            loss1.backward()
-            opt1.step()
+            scaler1.scale(loss1).backward()
+            scaler1.step(opt1)
+            scaler1.update()
             opt1.zero_grad()
 
-            # Autoencoder
-            if args.dataset == "embed-series":
-                # yapf: disable
-                _text_embs, _imagery = remove_empty_text_rows(text_embs, imagery1)
-                if _text_embs.shape[0] > 0:
-                    assert _text_embs.shape[0] == _imagery.shape[0]
-                    _visual_embs = model(_imagery)
-                    _visual_embs = F.normalize(_visual_embs, dim=1)
-                    res = autoencoder(_visual_embs, _text_embs)
-                    loss2 = 0.
-                    loss2 += obj2(res[0], _visual_embs)
-                    loss2 += obj2(res[1], _text_embs)
-                    loss2 += 3 * obj2(res[2], res[3])
-                    autoencoder_losses.append(loss2.item())
-                    loss2.backward()
-                    opt2.step()
-                    opt2.zero_grad()
-                # yapf: enable
+            # # Autoencoder
+            # if args.dataset == "embed-series":
+            #     # yapf: disable
+            #     _text_embs, _imagery = remove_empty_text_rows(text_embs, imagery1)
+            #     if _text_embs.shape[0] > 0:
+            #         assert _text_embs.shape[0] == _imagery.shape[0]
+            #         with torch.cuda.amp.autocast(dtype=torch.float16):
+            #             _visual_embs = model(_imagery)
+            #             _visual_embs = F.normalize(_visual_embs, dim=1)
+            #             res = autoencoder(_visual_embs, _text_embs)
+            #             loss2 = 0.
+            #             loss2 += obj2(res[0], _visual_embs)
+            #             loss2 += obj2(res[1], _text_embs)
+            #             loss2 += 3 * obj2(res[2], res[3])
+            #         autoencoder_losses.append(loss2.item())
+            #         loss2.backward()
+            #         opt2.step()
+            #         opt2.zero_grad()
+            #     # yapf: enable
 
             # Step schedulers
             sched1.step()

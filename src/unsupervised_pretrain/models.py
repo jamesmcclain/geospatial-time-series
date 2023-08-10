@@ -34,7 +34,6 @@ from torchvision import models
 
 CH = 12
 D2 = 256
-N = 3
 
 
 def freeze(m: torch.nn.Module) -> torch.nn.Module:
@@ -143,6 +142,60 @@ class SeriesResNet18(SeriesModel):
         # ResNet 18
         weights = models.ResNet18_Weights.DEFAULT if pretrained else None
         self.net = models.resnet18(weights=weights)
+
+        # Change number of input channels
+        self.net.conv1 = torch.nn.Conv2d(channels,
+                                         64,
+                                         kernel_size=(7, 7),
+                                         stride=(2, 2),
+                                         padding=(3, 3),
+                                         bias=False)
+
+        # Classifier (for attention) and attention
+        self.classifier = self.net.fc
+        self.net.fc = torch.nn.Identity()
+        D1 = self.classifier.out_features
+        self.attn_linear1 = torch.nn.Linear(D1, D2)
+
+        # Embedding dimensions
+        self.embedding_dim = self.classifier.in_features
+
+
+class SeriesResNet34(SeriesModel):
+
+    def __init__(self, pretrained: bool = True, channels: int = CH):
+        super(SeriesResNet34, self).__init__()
+
+        # ResNet 34
+        weights = models.ResNet34_Weights.DEFAULT if pretrained else None
+        self.net = models.resnet34(weights=weights)
+
+        # Change number of input channels
+        self.net.conv1 = torch.nn.Conv2d(channels,
+                                         64,
+                                         kernel_size=(7, 7),
+                                         stride=(2, 2),
+                                         padding=(3, 3),
+                                         bias=False)
+
+        # Classifier (for attention) and attention
+        self.classifier = self.net.fc
+        self.net.fc = torch.nn.Identity()
+        D1 = self.classifier.out_features
+        self.attn_linear1 = torch.nn.Linear(D1, D2)
+
+        # Embedding dimensions
+        self.embedding_dim = self.classifier.in_features
+
+
+class SeriesResNet50(SeriesModel):
+
+    def __init__(self, pretrained: bool = True, channels: int = CH):
+        super(SeriesResNet50, self).__init__()
+
+        # ResNet 50
+        weights = models.ResNet50_Weights.DEFAULT if pretrained else None
+        self.net = models.resnet50(weights=weights)
 
         # Change number of input channels
         self.net.conv1 = torch.nn.Conv2d(channels,
