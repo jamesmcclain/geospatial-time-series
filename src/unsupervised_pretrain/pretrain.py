@@ -58,12 +58,12 @@ def remove_empty_text_rows(a, b):
 if __name__ == "__main__":
 
     def str2bool(v):
-        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        if v.lower() in ("yes", "true", "t", "y", "1"):
             return True
-        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        elif v.lower() in ("no", "false", "f", "n", "0"):
             return False
         else:
-            raise argparse.ArgumentTypeError('Boolean value expected.')
+            raise argparse.ArgumentTypeError("Boolean value expected.")
 
     # yapf: disable
     # Command line arguments
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="The device to use for training (default: cuda)")
     parser.add_argument("--epochs", type=int, default=8, help="The number of epochs (default: 8)")
     parser.add_argument("--lr", type=float, default=1e-4, help="The learning rate (default: 1e-4)")
-    parser.add_argument('--pretrained', type=str2bool, default=False, help='Whether to start from pretrained weights (default: False)')
+    parser.add_argument("--pretrained", type=str2bool, default=False, help="Whether to start from pretrained weights (default: False)")
     parser.add_argument("--num-workers", type=int, default=3, help="Number of worker processes for the DataLoader (default: 3)")
     parser.add_argument("--output-dir", type=str, default=".", help="The directory where logs and artifacts will be deposited (default: .)")
     parser.add_argument("--pth-in", type=str, help="Optional path to a .pth file to use as a starting point for model training")
@@ -86,12 +86,20 @@ if __name__ == "__main__":
     parser.add_argument("--size", type=int, default=512, help="The tile size (default: 512)")
 
     # https://sagemaker.readthedocs.io/en/stable/overview.html#prepare-a-training-script
-    parser.add_argument('--sm-hps', type=json.loads, default=os.environ.get('SM_HPS', None))
-    parser.add_argument('--model-dir', type=str, default=os.environ.get('SM_MODEL_DIR', None))
-    parser.add_argument('--train', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', None))
-    parser.add_argument('--test', type=str, default=os.environ.get('SM_CHANNEL_TEST', None))
+    parser.add_argument("--sm-current-host", type=str, default=os.environ.get("SM_CURRENT_HOST", None))
+    parser.add_argument("--sm-data-dir", type=str, default=os.environ.get("SM_CHANNEL_TRAIN", None))
+    parser.add_argument("--sm-hosts", type=list, default=json.loads(os.environ.get("SM_HOSTS", {})))
+    parser.add_argument("--sm-model-dir", type=str, default=os.environ.get("SM_MODEL_DIR", None))
+    parser.add_argument("--sm-hps", type=json.loads, default=os.environ.get("SM_HPS", None))
     # yapf: enable
+
     args = parser.parse_args()
+
+    if args.sm_data_dir is not None:
+        args.cog_dirs = [args.sm_data_dir]
+
+    if args.sm_model_dir is not None:
+        args.ouptut_dir = args.sm_model_dir
 
     # Dataset
     if args.dataset == "series":
