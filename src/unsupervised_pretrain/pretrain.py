@@ -31,8 +31,10 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
+import json
 import logging
 import math
+import os
 import sys
 
 import numpy as np
@@ -44,7 +46,8 @@ from torch.utils.data import DataLoader
 
 from autoencoders import MultiViewAutoencoder
 from datasets import SeriesDataset, SeriesEmbedDataset
-from models import SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18, SeriesResNet34, SeriesResNet50
+from models import (SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18,
+                    SeriesResNet34, SeriesResNet50)
 
 
 def remove_empty_text_rows(a, b):
@@ -53,6 +56,15 @@ def remove_empty_text_rows(a, b):
 
 
 if __name__ == "__main__":
+
+    def str2bool(v):
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise argparse.ArgumentTypeError('Boolean value expected.')
+
     # yapf: disable
     # Command line arguments
     parser = argparse.ArgumentParser(description="Pretrain a model using a bunch unlabeled Sentinel-2 time series")
@@ -64,7 +76,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="The device to use for training (default: cuda)")
     parser.add_argument("--epochs", type=int, default=8, help="The number of epochs (default: 8)")
     parser.add_argument("--lr", type=float, default=1e-4, help="The learning rate (default: 1e-4)")
-    parser.add_argument('--no-pretrained', action='store_false', dest='pretrained', default=True, help='Whether to start from pretrained weights (default: True)')
+    parser.add_argument('--pretrained', type=str2bool, default=False, help='Whether to start from pretrained weights (default: False)')
     parser.add_argument("--num-workers", type=int, default=3, help="Number of worker processes for the DataLoader (default: 3)")
     parser.add_argument("--output-dir", type=str, default=".", help="The directory where logs and artifacts will be deposited (default: .)")
     parser.add_argument("--pth-in", type=str, help="Optional path to a .pth file to use as a starting point for model training")
@@ -72,6 +84,12 @@ if __name__ == "__main__":
     parser.add_argument("--series-length", type=int, default=8, help="The number of time steps in each sample (default: 8)")
     parser.add_argument("--latent-dims", type=int, default=8, help="The number of shared latent dimensions (default: 8)")
     parser.add_argument("--size", type=int, default=512, help="The tile size (default: 512)")
+
+    # https://sagemaker.readthedocs.io/en/stable/overview.html#prepare-a-training-script
+    parser.add_argument('--sm-hps', type=json.loads, default=os.environ.get('SM_HPS', None))
+    parser.add_argument('--model-dir', type=str, default=os.environ.get('SM_MODEL_DIR', None))
+    parser.add_argument('--train', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', None))
+    parser.add_argument('--test', type=str, default=os.environ.get('SM_CHANNEL_TEST', None))
     # yapf: enable
     args = parser.parse_args()
 
