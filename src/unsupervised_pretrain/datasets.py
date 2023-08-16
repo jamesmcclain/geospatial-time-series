@@ -1,6 +1,6 @@
 # BSD 3-Clause License
 #
-# Copyright (c) 2022-23, Azavea, Element84, James McClain
+# Copyright (c) 2022-23
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
