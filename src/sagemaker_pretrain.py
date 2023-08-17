@@ -20,7 +20,7 @@ if __name__ == "__main__":
     # yapf: disable
     # Command line arguments
     parser = argparse.ArgumentParser(description="Pretrain a model using a bunch unlabeled Sentinel-2 time series")
-    parser.add_argument("cog_dirs", nargs="+", type=str, help="Paths to the data")
+    parser.add_argument("--cog-dirs", nargs="+", required=True, type=str, help="Paths to the data")
     parser.add_argument("--architecture", type=str, default="resnet18", choices=["resnet18", "resnet34", "resnet50", "mobilenetv3", "efficientnetb0"], help="The model architecture to use (default: resnet18)")
     parser.add_argument("--bands", type=int, nargs="+", default=list(range(1, 12 + 1)), help="The Sentinel-2 bands to use (1 indexed)")
     parser.add_argument("--batch-size", type=int, default=7, help="The batch size (default: 7)")
@@ -46,9 +46,9 @@ if __name__ == "__main__":
     }
 
     hyperparameters = {
-        "cog_dirs": ["this", "space", "intentionally", "left", "blank"],
+        "cog-dirs": "this space intentionally left blank",
         "architecture": args.architecture,
-        "bands": args.bands,
+        "bands": " ".join(map(str, args.bands)),
         "batch-size": args.batch_size,
         "dataset": args.dataset,
         "device": args.device,
@@ -56,12 +56,14 @@ if __name__ == "__main__":
         "lr": args.lr,
         "pretrained": args.pretrained,
         "num-workers": args.num_workers,
-        "pth-in": args.pth_in,
         "pth-out": args.pth_out,
         "series-length": args.series_length,
         "latent-dims": args.latent_dims,
         "size": args.size,
+        "autocast": "float16",
     }
+    if args.pth_in is not None:
+        hyperparameters.update({"pth-in": args.pth_in})
 
     pytorch_estimator = sagemaker.pytorch.PyTorch(
         entry_point="pretrain.py",
@@ -70,6 +72,7 @@ if __name__ == "__main__":
         hyperparameters=hyperparameters,
         instance_count=1,
         instance_type="ml.p3.2xlarge",
+        # instance_type="ml.m4.xlarge",
         output_path=args.output_dir,
         py_version="py310",
         role="AmazonSageMakerExecutionRole",

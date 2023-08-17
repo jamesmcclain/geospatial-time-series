@@ -203,7 +203,10 @@ class SeriesEmbedDataset(SeriesDataset):
                 cog_dir_parts = cog_dir_parts[:-1]
             embedding_filename = f"{cog_dir_parts[-1]}-{size}.npy"
             embedding_filename = f"{cog_dir}/**/{embedding_filename}"
-            embedding_filename = glob.glob(embedding_filename, recursive=True)[-1]
+            try:
+                embedding_filename = glob.glob(embedding_filename, recursive=True)[-1]
+            except:
+                embedding_filename = glob.glob(f"{cog_dir}/**/*.npy", recursive=True)[-1]
 
             vectors = np.load(embedding_filename)
             _cog_dir["embeddings"] = vectors
