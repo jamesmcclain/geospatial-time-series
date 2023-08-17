@@ -2,7 +2,7 @@
 
 # BSD 3-Clause License
 #
-# Copyright (c) 2022-23, Azavea, Element84, James McClain
+# Copyright (c) 2022-23
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -31,9 +31,17 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
+import json
 import logging
 import math
+import os
 import sys
+
+# https://github.com/aws/sagemaker-python-sdk/issues/868
+if os.environ.get("SM_HPS", False):
+    os.system(f"{sys.executable} -m pip install pytorch-metric-learning==2.1.2")
+    os.system(f"{sys.executable} -m pip install rasterio==1.3.7 pyproj==3.6.0")
+    os.system(f"{sys.executable} -m pip install shapely==2.0.1")
 
 import numpy as np
 import torch
@@ -44,7 +52,8 @@ from torch.utils.data import DataLoader
 
 from autoencoders import MultiViewAutoencoder
 from datasets import SeriesDataset, SeriesEmbedDataset
-from models import SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18, SeriesResNet34, SeriesResNet50
+from models import (SeriesEfficientNetb0, SeriesMobileNetv3, SeriesResNet18,
+                    SeriesResNet34, SeriesResNet50)
 
 
 def remove_empty_text_rows(a, b):
@@ -53,27 +62,59 @@ def remove_empty_text_rows(a, b):
 
 
 if __name__ == "__main__":
+
+    def str2bool(v):
+        if v.lower() in ("yes", "true", "t", "y", "1"):
+            return True
+        elif v.lower() in ("no", "false", "f", "n", "0"):
+            return False
+        else:
+            raise argparse.ArgumentTypeError("Boolean value expected.")
+
     # yapf: disable
     # Command line arguments
     parser = argparse.ArgumentParser(description="Pretrain a model using a bunch unlabeled Sentinel-2 time series")
-    parser.add_argument("cog_dirs", nargs="+", type=str, help="Paths to the data")
+    parser.add_argument("--cog-dirs", nargs="+", required=True, type=str, help="Paths to the data")
     parser.add_argument("--architecture", type=str, default="resnet18", choices=["resnet18", "resnet34", "resnet50", "mobilenetv3", "efficientnetb0"], help="The model architecture to use (default: resnet18)")
+    parser.add_argument("--autocast", type=str, default="bfloat16", choices=["bfloat16", "float16", "float32"], help="The autocast type (default: bfloat16)")
     parser.add_argument("--bands", type=int, nargs="+", default=list(range(1, 12 + 1)), help="The Sentinel-2 bands to use (1 indexed)")
     parser.add_argument("--batch-size", type=int, default=7, help="The batch size (default: 7)")
     parser.add_argument("--dataset", type=str, required=True, choices=["embed-series", "series", "digest"], help="The type of data found in the data directories")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="The device to use for training (default: cuda)")
     parser.add_argument("--epochs", type=int, default=8, help="The number of epochs (default: 8)")
+    parser.add_argument("--latent-dims", type=int, default=8, help="The number of shared latent dimensions (default: 8)")
     parser.add_argument("--lr", type=float, default=1e-4, help="The learning rate (default: 1e-4)")
-    parser.add_argument('--no-pretrained', action='store_false', dest='pretrained', default=True, help='Whether to start from pretrained weights (default: True)')
     parser.add_argument("--num-workers", type=int, default=3, help="Number of worker processes for the DataLoader (default: 3)")
     parser.add_argument("--output-dir", type=str, default=".", help="The directory where logs and artifacts will be deposited (default: .)")
+    parser.add_argument("--pretrained", type=str2bool, default=False, help="Whether to start from pretrained weights (default: False)")
     parser.add_argument("--pth-in", type=str, help="Optional path to a .pth file to use as a starting point for model training")
     parser.add_argument("--pth-out", type=str, default="model.pth", help="The name of the output .pth file (default: model.pth)")
     parser.add_argument("--series-length", type=int, default=8, help="The number of time steps in each sample (default: 8)")
-    parser.add_argument("--latent-dims", type=int, default=8, help="The number of shared latent dimensions (default: 8)")
     parser.add_argument("--size", type=int, default=512, help="The tile size (default: 512)")
+
+    # https://sagemaker.readthedocs.io/en/stable/overview.html#prepare-a-training-script
+    parser.add_argument("--sm-current-host", type=str, default=os.environ.get("SM_CURRENT_HOST", None))
+    parser.add_argument("--sm-data-dir", type=str, default=os.environ.get("SM_CHANNEL_TRAIN", None))
+    parser.add_argument("--sm-hosts", type=list, default=json.loads(os.environ.get("SM_HOSTS", "null")))
+    parser.add_argument("--sm-model-dir", type=str, default=os.environ.get("SM_MODEL_DIR", None))
+    parser.add_argument("--sm-hps", type=json.loads, default=os.environ.get("SM_HPS", "null"))
     # yapf: enable
+
     args = parser.parse_args()
+
+    if args.sm_data_dir is not None:
+        args.cog_dirs = [args.sm_data_dir]
+
+    if args.sm_model_dir is not None:
+        args.ouptut_dir = args.sm_model_dir
+
+    # Logging
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(asctime)-15s %(message)s")  # yapf: disable
+    log = logging.getLogger()
+    if args.output_dir is not None:
+        fh = logging.FileHandler(f"{args.output_dir}/output.log")
+        log.addHandler(fh)
+    log.info(args.__dict__)
 
     # Dataset
     if args.dataset == "series":
@@ -103,15 +144,6 @@ if __name__ == "__main__":
         pin_memory=True,
         num_workers=args.num_workers,
     )
-
-    # Logging
-    logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(asctime)-15s %(message)s")  # yapf: disable
-    log = logging.getLogger()
-    if args.output_dir is not None:
-        fh = logging.FileHandler(f"{args.output_dir}/output.log")
-        log.addHandler(fh)
-
-    log.info(args.__dict__)
 
     # PyTorch device
     device = torch.device(args.device)
@@ -177,6 +209,8 @@ if __name__ == "__main__":
         triplet_losses = []
         autoencoder_losses = []
 
+        dtype = eval(f"torch.{args.autocast}")
+
         for data in tqdm.tqdm(dataloader):
 
             if args.dataset == "embed-series":
@@ -195,7 +229,7 @@ if __name__ == "__main__":
                 _text_embs, _imagery = remove_empty_text_rows(text_embs, imagery0)
                 if _text_embs.shape[0] > 0:
                     assert _text_embs.shape[0] == _imagery.shape[0]
-                    with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+                    with torch.cuda.amp.autocast(dtype=dtype):
                         _visual_embs = model(_imagery)
                         _visual_embs = F.normalize(_visual_embs, dim=1)
                         res = autoencoder(_visual_embs, _text_embs)
@@ -211,7 +245,7 @@ if __name__ == "__main__":
                 # yapf: enable
 
             # Body
-            with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+            with torch.cuda.amp.autocast(dtype=dtype):
                 loss1 = obj1(model(imagery0), model(imagery1))
             triplet_losses.append(loss1.item())
             scaler1.scale(loss1).backward()
