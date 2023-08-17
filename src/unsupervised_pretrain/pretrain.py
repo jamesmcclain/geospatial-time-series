@@ -37,6 +37,12 @@ import math
 import os
 import sys
 
+# https://github.com/aws/sagemaker-python-sdk/issues/868
+if os.environ.get("SM_HPS", False):
+    os.system(f"{sys.executable} -m pip install pytorch-metric-learning==2.1.2")
+    os.system(f"{sys.executable} -m pip install rasterio==1.3.7 pyproj==3.6.0")
+    os.system(f"{sys.executable} -m pip install shapely==2.0.1")
+
 import numpy as np
 import torch
 import torch.nn.functional as F
