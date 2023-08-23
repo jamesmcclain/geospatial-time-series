@@ -19,7 +19,7 @@ if __name__ == "__main__":
 
     # yapf: disable
     # Command line arguments
-    parser = argparse.ArgumentParser(description="Pretrain a model using a bunch unlabeled Sentinel-2 time series")
+    parser = argparse.ArgumentParser(description="")
     parser.add_argument("--cog-dirs", nargs="+", required=True, type=str, help="Paths to the data")
     parser.add_argument("--architecture", type=str, default="resnet18", choices=["resnet18", "resnet34", "resnet50", "mobilenetv3", "efficientnetb0"], help="The model architecture to use (default: resnet18)")
     parser.add_argument("--bands", type=int, nargs="+", default=list(range(1, 12 + 1)), help="The Sentinel-2 bands to use (1 indexed)")
