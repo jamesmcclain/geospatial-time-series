@@ -8,4 +8,4 @@ RUN pip install sentence-transformers==2.2.2 InstructorEmbedding==1.0.1
 
 WORKDIR /workdir
 
-# docker build -f Dockerfile -t timeseries:2.0.1-cuda11.7-cudnn8-devel .
+# DOCKER_BUILDKIT=1 docker build --build-arg BUILDKIT_INLINE_CACHE=1 -f Dockerfile -t timeseries:2.0.1-cuda11.7-cudnn8-devel .
