@@ -106,7 +106,7 @@ if __name__ == "__main__":
         args.cog_dirs = [args.sm_data_dir]
 
     if args.sm_model_dir is not None:
-        args.ouptut_dir = args.sm_model_dir
+        args.output_dir = args.sm_model_dir
 
     # Logging
     logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(asctime)-15s %(message)s")  # yapf: disable
