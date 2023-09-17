@@ -6,8 +6,10 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install affine==2.4.0 attrs==
 
 RUN --mount=type=cache,target=/root/.cache/pip pip install fastparquet tqdm
 
-COPY gensim-glove.py gensim-glove.py
+RUN --mount=type=cache,target=/root/.cache/pip pip install joblib==1.3.2 nltk==3.8.1 regex==2023.8.8
 
-RUN python3 gensim-glove.py && rm gensim-glove.py
+COPY download.py download.py
+
+RUN python3 download.py && rm download.py
 
 # DOCKER_BUILDKIT=1 docker build --build-arg BUILDKIT_INLINE_CACHE=1 --platform linux/amd64 -f Dockerfile.preprocess -t timeseries-preprocess .
