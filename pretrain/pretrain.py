@@ -57,13 +57,6 @@ from models import (
 )
 
 
-def average_gradients(model):
-    size = float(dist.get_world_size())
-    for param in model.parameters():
-        dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM)
-        param.grad.data /= size
-
-
 if __name__ == "__main__":
 
     def str2bool(v):
@@ -249,8 +242,6 @@ if __name__ == "__main__":
                 loss1 = obj1(model(left), model(right))
             triplet_losses.append(loss1.item())
             scaler1.scale(loss1).backward()
-            if rank > 1:
-                average_gradients(model)
             scaler1.step(opt1)
             scaler1.update()
             opt1.zero_grad()
@@ -269,9 +260,6 @@ if __name__ == "__main__":
                     loss2 += obj2(result[2], result[3])
                 autoencoder_losses.append(loss2.item())
                 scaler2.scale(loss2).backward()
-                if rank > 1:
-                    average_gradients(autoencoder)
-                    average_gradients(model)
                 scaler2.step(opt2)
                 scaler2.update()
                 opt2.zero_grad()
