@@ -31,7 +31,9 @@
 import copy
 import glob
 import random
+import threading
 from typing import List
+from zipfile import BadZipFile
 
 import numpy as np
 import torch
@@ -47,23 +49,31 @@ class SeriesDataset(torch.utils.data.Dataset):
         super().__init__()
         self.series_length = series_length
         self.bands = copy.copy(bands)
-        self.chips = sorted(glog.glob(f"{dataset_dir}/**/*.chip.npz", recursive=True))
+
+        self.chips = sorted(glob.glob(f"{dataset_dir}/**/*.chip.npz", recursive=True))
+        self.locks = []
+        for chip in self.chips:
+            self.locks.append(threading.Lock())
+        # self.lock = threading.Lock()
 
     def __len__(self):
         return len(self.chips)
 
     def __getitem__(self, index):
-        chip = np.load(self.chips[index]).get("chip")
+        # with self.locks[index]:
+        if True:
+            data = np.load(self.chips[index])
+            chip = np.array(data.get("chips"))
         n, _, _, _ = chip.shape
         assert n >= 2 * self.series_length
         perm = list(range(0, n))
         random.shuffle(perm)
 
         left = perm[0 : self.series_length]
-        left = chip[left, self.bands, :, :].astype(np.float32)
+        left = chip[left, ...][:, self.bands, ...].astype(np.float32)
 
         right = perm[self.series_length : 2 * self.series_length]
-        right = chip[right, self.bands, :, :].astype(np.flat32)
+        right = chip[right, ...][:, self.bands, ...].astype(np.float32)
 
         return left, right
 
@@ -82,7 +92,9 @@ class SeriesEmbedDataset(SeriesDataset):
             bands=bands,
         )
 
-        self.embeddings = np.load(embeddings_npz)
+        self.embeddings = {}
+        for k, v in np.load(embeddings_npz).items():
+            self.embeddings.update({k: v})
 
     def __getitem__(self, index):
         left, right = super().__getitem__(index)
