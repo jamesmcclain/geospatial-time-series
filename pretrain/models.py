@@ -46,8 +46,22 @@ def unfreeze(m: torch.nn.Module) -> torch.nn.Module:
         p.requires_grad = True
 
 
-class SeriesModel(torch.nn.Module):
+def remove_inplace(model):
+    for name, module in model.named_children():
+        # Replace ReLU
+        if isinstance(module, torch.nn.ReLU):
+            setattr(model, name, torch.nn.ReLU(inplace=False))
+        # Replace Dropout while preserving its parameters
+        elif isinstance(module, torch.nn.Dropout):
+            dropout_params = module.state_dict()
+            new_dropout = torch.nn.Dropout(**dropout_params, inplace=False)
+            setattr(model, name, new_dropout)
+        else:
+            # Recursively apply the replacements to child modules
+            remove_inplace(module)
 
+
+class SeriesModel(torch.nn.Module):
     def __init__(self):
         super(SeriesModel, self).__init__()
         self.attn_linear2 = torch.nn.Linear(D2, 1)
@@ -75,25 +89,22 @@ class SeriesModel(torch.nn.Module):
 
 
 class SeriesEfficientNetb0(SeriesModel):
-
     def __init__(self, pretrained: bool = True, channels: int = CH):
         super(SeriesEfficientNetb0, self).__init__()
 
         # EfficientNet b0
         weights = models.EfficientNet_B0_Weights.DEFAULT if pretrained else None
         net = models.efficientnet_b0(weights=weights)
+        remove_inplace(net)
         self.net = torch.nn.Sequential(
             net.features,
             net.avgpool,
         )
 
         # Change number of input channels
-        net.features[0][0] = torch.nn.Conv2d(channels,
-                                             32,
-                                             kernel_size=(3, 3),
-                                             stride=(2, 2),
-                                             padding=(1, 1),
-                                             bias=False)
+        net.features[0][0] = torch.nn.Conv2d(
+            channels, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False
+        )
 
         # Classifier (for attention) and attention
         self.classifier = net.classifier
@@ -105,25 +116,22 @@ class SeriesEfficientNetb0(SeriesModel):
 
 
 class SeriesMobileNetv3(SeriesModel):
-
     def __init__(self, pretrained: bool = True, channels: int = CH):
         super(SeriesMobileNetv3, self).__init__()
 
         # MobileNet
         weights = models.MobileNet_V3_Small_Weights.DEFAULT if pretrained else None
         net = models.mobilenet_v3_small(weights=weights)
+        remove_inplace(net)
         self.net = torch.nn.Sequential(
             net.features,
             net.avgpool,
         )
 
         # Change number of input channels
-        net.features[0][0] = torch.nn.Conv2d(channels,
-                                             16,
-                                             kernel_size=(3, 3),
-                                             stride=(2, 2),
-                                             padding=(1, 1),
-                                             bias=False)
+        net.features[0][0] = torch.nn.Conv2d(
+            channels, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False
+        )
 
         # Classifier (for attention) and attention
         self.classifier = net.classifier
@@ -135,21 +143,18 @@ class SeriesMobileNetv3(SeriesModel):
 
 
 class SeriesResNet18(SeriesModel):
-
     def __init__(self, pretrained: bool = True, channels: int = CH):
         super(SeriesResNet18, self).__init__()
 
         # ResNet 18
         weights = models.ResNet18_Weights.DEFAULT if pretrained else None
         self.net = models.resnet18(weights=weights)
+        remove_inplace(self.net)
 
         # Change number of input channels
-        self.net.conv1 = torch.nn.Conv2d(channels,
-                                         64,
-                                         kernel_size=(7, 7),
-                                         stride=(2, 2),
-                                         padding=(3, 3),
-                                         bias=False)
+        self.net.conv1 = torch.nn.Conv2d(
+            channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
+        )
 
         # Classifier (for attention) and attention
         self.classifier = self.net.fc
@@ -162,21 +167,18 @@ class SeriesResNet18(SeriesModel):
 
 
 class SeriesResNet34(SeriesModel):
-
     def __init__(self, pretrained: bool = True, channels: int = CH):
         super(SeriesResNet34, self).__init__()
 
         # ResNet 34
         weights = models.ResNet34_Weights.DEFAULT if pretrained else None
         self.net = models.resnet34(weights=weights)
+        remove_inplace(self.net)
 
         # Change number of input channels
-        self.net.conv1 = torch.nn.Conv2d(channels,
-                                         64,
-                                         kernel_size=(7, 7),
-                                         stride=(2, 2),
-                                         padding=(3, 3),
-                                         bias=False)
+        self.net.conv1 = torch.nn.Conv2d(
+            channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
+        )
 
         # Classifier (for attention) and attention
         self.classifier = self.net.fc
@@ -189,21 +191,18 @@ class SeriesResNet34(SeriesModel):
 
 
 class SeriesResNet50(SeriesModel):
-
     def __init__(self, pretrained: bool = True, channels: int = CH):
         super(SeriesResNet50, self).__init__()
 
         # ResNet 50
         weights = models.ResNet50_Weights.DEFAULT if pretrained else None
         self.net = models.resnet50(weights=weights)
+        remove_inplace(self.net)
 
         # Change number of input channels
-        self.net.conv1 = torch.nn.Conv2d(channels,
-                                         64,
-                                         kernel_size=(7, 7),
-                                         stride=(2, 2),
-                                         padding=(3, 3),
-                                         bias=False)
+        self.net.conv1 = torch.nn.Conv2d(
+            channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
+        )
 
         # Classifier (for attention) and attention
         self.classifier = self.net.fc

@@ -1,0 +1,9 @@
+FROM timeseries:2.0.1-cuda11.7-cudnn8-devel
+
+RUN --mount=type=cache,target=/root/.cache/pip pip install jupyter numpy scikit-learn matplotlib
+
+EXPOSE 8888
+
+CMD ["jupyter", "notebook", "--ip='*'", "--port=8888", "--no-browser", "--allow-root"]
+
+# DOCKER_BUILDKIT=1 docker build --build-arg BUILDKIT_INLINE_CACHE=1 -f Dockerfile.jupyter -t timeseries-jupyter .
