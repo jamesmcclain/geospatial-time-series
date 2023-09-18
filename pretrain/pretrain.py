@@ -44,6 +44,7 @@ import torch.distributed as dist
 import torch.nn.functional as F
 import tqdm
 from pytorch_metric_learning import losses
+from pytorch_metric_learning.utils import distributed as pml_dist
 from torch.utils.data import DataLoader
 
 from autoencoders import MultiViewAutoencoder
@@ -56,6 +57,29 @@ from models import (
     SeriesResNet50,
 )
 
+
+class CheckGradientFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        # Save the input for backward pass
+        ctx.save_for_backward(input)
+        return input.clone()
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        # Get the saved input
+        input, = ctx.saved_tensors
+
+        # Check if the gradient has been modified in-place
+        if not torch.equal(grad_output, grad_output.clone()):
+            print("Gradient modified in-place!")
+            import pdb; pdb.set_trace()
+
+        return grad_output
+
+
+def check_gradient(tensor):
+    return CheckGradientFunction.apply(tensor)
 
 if __name__ == "__main__":
 
@@ -89,7 +113,11 @@ if __name__ == "__main__":
     parser.add_argument("--pth-out", type=str, default="model.pth", help="The name of the output .pth file (default: model.pth)")
     parser.add_argument("--series-length", type=int, default=8, help="The number of time steps in each sample (default: 8)")
     # https://sagemaker.readthedocs.io/en/stable/overview.html#prepare-a-training-script
-    parser.add_argument("--sm-backend", type=str, default=None, choices=["gloo", "nccl"], help="The PyTorch distributed-trained backend to use")
+    parser.add_argument("--master-addr", type=str, default=None, help="The address of the master node (for distributed training)")
+    parser.add_argument("--master-port", type=str, default=None, help="The port on the master node (for distributed training)")
+    parser.add_argument("--rank", type=int, default=None, help="The rank of this node (for distributed training)")
+    parser.add_argument("--world-size", type=int, default=None, help="The world size (for distributed training)")
+    parser.add_argument("--sm-backend", type=str, default="gloo", choices=["gloo", "nccl"], help="The PyTorch distributed-trained backend to use")
     parser.add_argument("--sm-current-host", type=str, default=os.environ.get("SM_CURRENT_HOST", None))
     parser.add_argument("--sm-hosts", type=list, default=json.loads(os.environ.get("SM_HOSTS", "null")))
     parser.add_argument("--sm-data-dir", type=str, default=os.environ.get("SM_CHANNEL_TRAIN", None))
@@ -97,6 +125,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.input_dir is None:
         parser.error("Must supply --input-dir")
+    if (args.sm_hosts is not None and args.sm_current_host is None) or (args.sm_hosts is None and args.sm_current_host is not None):
+        parser.error("If --sm-current-host is given then --sm-hosts must be given (and vice-versa)")
+    if (args.rank is not None and args.world_size is None) or (args.rank is None and args.world_size is not None):
+        parser.error("If --rank is given then --world-size must be given (and vice-versa)")
+    if args.rank is not None and args.sm_current_host is not None:
+        parser.error("Must use either --rank and --world-size or --sm-current-host or --sm-hosts, but not both")
     # yapf: enable
 
     # Logging
@@ -109,16 +143,23 @@ if __name__ == "__main__":
         log.addHandler(fh)
     log.info(args.__dict__)
 
-    if args.sm_current_host is not None and args.sm_hosts is not None:
+    if args.rank is not None and args.world_size is not None:
+        rank = args.rank
+        world_size = args.world_size
+    elif args.sm_current_host is not None and args.sm_hosts is not None:
         rank = sorted(args.sm_hosts, reverse=False).index(args.sm_current_host)
         world_size = len(args.sm_hosts)
-        log.info(f"rank {rank}")
+        log.info(f"rank {rank} via inspection of hosts")
     else:
         rank = 0
         world_size = 1
 
     # Initialize distribution (if it should be initialized)
     if world_size > 1:
+        if args.master_addr is not None:
+            os.environ["MASTER_ADDR"] = args.master_addr
+        if args.master_port is not None:
+            os.environ["MASTER_PORT"] = args.master_port
         dist.init_process_group(
             backend=args.sm_backend, rank=rank, world_size=world_size
         )
@@ -130,7 +171,9 @@ if __name__ == "__main__":
     if args.embeddings_npz is None:
         dataset = SeriesDataset(args.input_dir, args.series_length, args.bands)
     else:
-        embeddings_npz = glob.glob(f"{args.input_dir}/**/{args.embeddings_npz}", recursive=True)[0]
+        embeddings_npz = glob.glob(
+            f"{args.input_dir}/**/{args.embeddings_npz}", recursive=True
+        )[0]
         dataset = SeriesEmbedDataset(
             args.input_dir, embeddings_npz, args.series_length, args.bands
         )
@@ -194,8 +237,10 @@ if __name__ == "__main__":
         autoencoder = torch.nn.parallel.DistributedDataParallel(autoencoder)
 
     # Loss functions, optimizers, schedulers
-    base_obj = losses.TripletMarginLoss().to(device)
-    obj1 = losses.SelfSupervisedLoss(base_obj).to(device)
+    obj1 = losses.TripletMarginLoss(triplets_per_anchor=args.batch_size).to(device)
+    if world_size > 1:
+        obj1 = pml_dist.DistributedLossWrapper(obj1).to(device)
+        log.info("wrapping w/ DistributedLossWrapper")
     opt1 = torch.optim.Adam(model.parameters(), lr=args.lr)
     sched1 = torch.optim.lr_scheduler.OneCycleLR(
         opt1,
@@ -204,6 +249,8 @@ if __name__ == "__main__":
         epochs=args.epochs,
     )
     scaler1 = torch.cuda.amp.GradScaler()
+
+    # Again
     if args.embeddings_npz is not None:
         obj2 = torch.nn.MSELoss().to(device)
         params = list(model.parameters()) + list(autoencoder.parameters())
@@ -217,6 +264,7 @@ if __name__ == "__main__":
     if args.embeddings_npz is not None:
         autoencoder.train()
 
+    torch.autograd.set_detect_anomaly(True)  # XXX
     for epoch in range(0, args.epochs):
         triplet_losses = []
         autoencoder_losses = []
@@ -224,31 +272,37 @@ if __name__ == "__main__":
         dtype = eval(f"torch.{args.autocast}")
 
         for data in tqdm.tqdm(dataloader):
-            if len(data) == 2:
-                left, right = data
-                left = left.to(device)
-                right = right.to(device)
+            if len(data) == 3:
+                left, right, labels = data
+                left = check_gradient(left.to(device))
+                right = check_gradient(right.to(device))
+                labels = labels.to(device)
                 embeddings = None
-            elif len(data) == 3:
-                left, right, embeddings = data
+            elif len(data) == 4:
+                left, right, embeddings, lables = data
                 left = left.to(device)
                 right = right.to(device)
                 embeddings = embeddings.to(device)
+                labels = labels.to(device)
             else:
                 raise Exception(f"Cannot handle data tuple of length {len(data)}")
 
             # Body
+            opt1.zero_grad()
             with torch.cuda.amp.autocast(dtype=dtype):
-                loss1 = obj1(model(left), model(right))
+                loss1 = obj1(
+                    torch.cat([model(left), model(right)], dim=0),
+                    torch.cat([labels, labels], dim=0),
+                )
             triplet_losses.append(loss1.item())
             scaler1.scale(loss1).backward()
             scaler1.step(opt1)
             scaler1.update()
-            opt1.zero_grad()
 
             # Autoencoder
             if embeddings is not None:
                 # yapf: disable
+                opt2.zero_grad()
                 with torch.cuda.amp.autocast(dtype=dtype):
                     visual_left = model(left)
                     result = autoencoder(
@@ -262,12 +316,12 @@ if __name__ == "__main__":
                 scaler2.scale(loss2).backward()
                 scaler2.step(opt2)
                 scaler2.update()
-                opt2.zero_grad()
                 # yapf: enable
 
             # Step schedulers
             sched1.step()
-            sched2.step()
+            if embeddings is not None:
+                sched2.step()
 
         triplet_losses = np.mean(triplet_losses)
         if embeddings is None and rank == 0:

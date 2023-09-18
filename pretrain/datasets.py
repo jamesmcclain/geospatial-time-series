@@ -75,7 +75,7 @@ class SeriesDataset(torch.utils.data.Dataset):
         right = perm[self.series_length : 2 * self.series_length]
         right = chip[right, ...][:, self.bands, ...].astype(np.float32)
 
-        return left, right
+        return left, right, index
 
 
 class SeriesEmbedDataset(SeriesDataset):
@@ -101,4 +101,4 @@ class SeriesEmbedDataset(SeriesDataset):
         chip_id = self.chips[index].split("/")[-1].split(".")[0]
         embedding = self.embeddings.get(chip_id)
 
-        return left, right, embedding
+        return left, right, embedding, index
