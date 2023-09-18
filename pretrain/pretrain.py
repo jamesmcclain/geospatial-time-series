@@ -233,13 +233,18 @@ if __name__ == "__main__":
 
     # Make model and autoencoder distributed (if they should be)
     if world_size > 1:
-        model = torch.nn.parallel.DistributedDataParallel(model)
-        autoencoder = torch.nn.parallel.DistributedDataParallel(autoencoder)
+        #  This was fun: https://github.com/pytorch/pytorch/issues/66504
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, broadcast_buffers=False
+        )
+        autoencoder = torch.nn.parallel.DistributedDataParallel(
+            autoencoder, broadcast_buffers=False
+        )
 
     # Loss functions, optimizers, schedulers
-    obj1 = losses.TripletMarginLoss(triplets_per_anchor=args.batch_size).to(device)
     if world_size > 1:
-        obj1 = pml_dist.DistributedLossWrapper(obj1).to(device)
+    obj1 = losses.TripletMarginLoss().to(device)
+        obj1 = pml_dist.DistributedLossWrapper(obj1, efficient=True).to(device)
         log.info("wrapping w/ DistributedLossWrapper")
     opt1 = torch.optim.Adam(model.parameters(), lr=args.lr)
     sched1 = torch.optim.lr_scheduler.OneCycleLR(
@@ -264,8 +269,8 @@ if __name__ == "__main__":
     if args.embeddings_npz is not None:
         autoencoder.train()
 
-    torch.autograd.set_detect_anomaly(True)  # XXX
     for epoch in range(0, args.epochs):
+        dataloader.sampler.set_epoch(epoch)
         triplet_losses = []
         autoencoder_losses = []
 
