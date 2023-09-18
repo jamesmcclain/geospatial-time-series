@@ -117,23 +117,33 @@ if __name__ == "__main__":
     log.info(args.__dict__)
 
     if args.sm_current_host is not None and args.sm_hosts is not None:
-        rank = sorted(args.sm_hosts).index(args.sm_current_host)
-        world_size = len(args.sm_current_host)
+        rank = sorted(args.sm_hosts, reverse=False).index(args.sm_current_host)
+        world_size = len(args.sm_hosts)
+        log.info(f"rank {rank}")
     else:
         rank = 0
         world_size = 1
+
+    # Initialize distribution (if it should be initialized)
+    if world_size > 1:
+        dist.init_process_group(
+            backend=args.sm_backend, rank=rank, world_size=world_size
+        )
+        log.info(
+            f"Distributed training: rank={rank} world_size={world_size} backend={args.sm_backend}"
+        )
 
     # Dataset
     if args.embeddings_npz is None:
         dataset = SeriesDataset(args.input_dir, args.series_length, args.bands)
     else:
-        embeddings_npz = glob.glob(f"{args.input_dir}/**/{args.embeddings_npz}")[0]
+        embeddings_npz = glob.glob(f"{args.input_dir}/**/{args.embeddings_npz}", recursive=True)[0]
         dataset = SeriesEmbedDataset(
             args.input_dir, embeddings_npz, args.series_length, args.bands
         )
 
     if world_size > 1:
-        sampler = torch.utils.data.distributedDistributedSampler(dataset)
+        sampler = torch.utils.data.distributed.DistributedSampler(dataset)
     else:
         sampler = None
 
@@ -150,15 +160,6 @@ if __name__ == "__main__":
 
     # PyTorch device
     device = torch.device(args.device)
-
-    # Initialize distribution (if it should be initialized)
-    if world_size > 1:
-        dist.init_process_group(
-            backend=args.sm_backend, rank=rank, world_size=world_size
-        )
-        log.info(
-            f"Distributed training: rank={rank} world_size={world_size} backend={args.sm_backend}"
-        )
 
     # Model
     if args.pth_in is None:
