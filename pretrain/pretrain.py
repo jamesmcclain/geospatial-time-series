@@ -57,30 +57,6 @@ from models import (
     SeriesResNet50,
 )
 
-
-class CheckGradientFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input):
-        # Save the input for backward pass
-        ctx.save_for_backward(input)
-        return input.clone()
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        # Get the saved input
-        input, = ctx.saved_tensors
-
-        # Check if the gradient has been modified in-place
-        if not torch.equal(grad_output, grad_output.clone()):
-            print("Gradient modified in-place!")
-            import pdb; pdb.set_trace()
-
-        return grad_output
-
-
-def check_gradient(tensor):
-    return CheckGradientFunction.apply(tensor)
-
 if __name__ == "__main__":
 
     def str2bool(v):
@@ -242,10 +218,9 @@ if __name__ == "__main__":
         )
 
     # Loss functions, optimizers, schedulers
-    if world_size > 1:
     obj1 = losses.TripletMarginLoss().to(device)
+    if world_size > 1:
         obj1 = pml_dist.DistributedLossWrapper(obj1, efficient=True).to(device)
-        log.info("wrapping w/ DistributedLossWrapper")
     opt1 = torch.optim.Adam(model.parameters(), lr=args.lr)
     sched1 = torch.optim.lr_scheduler.OneCycleLR(
         opt1,
@@ -270,7 +245,7 @@ if __name__ == "__main__":
         autoencoder.train()
 
     for epoch in range(0, args.epochs):
-        dataloader.sampler.set_epoch(epoch)
+        # dataloader.sampler.set_epoch(epoch)
         triplet_losses = []
         autoencoder_losses = []
 
@@ -279,8 +254,8 @@ if __name__ == "__main__":
         for data in tqdm.tqdm(dataloader):
             if len(data) == 3:
                 left, right, labels = data
-                left = check_gradient(left.to(device))
-                right = check_gradient(right.to(device))
+                left = left.to(device)
+                right = right.to(device)
                 labels = labels.to(device)
                 embeddings = None
             elif len(data) == 4:
