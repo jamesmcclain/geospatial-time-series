@@ -33,7 +33,6 @@ import torch.nn.functional as F
 
 
 class SphericalAutoencoder(torch.nn.Module):
-
     def __init__(self, input_dim, latent_dim):
         super(SphericalAutoencoder, self).__init__()
 
@@ -63,7 +62,6 @@ class SphericalAutoencoder(torch.nn.Module):
 
 
 class MultiViewAutoencoder(torch.nn.Module):
-
     def __init__(self, input_dim_1, input_dim_2, shared_dim):
         super(MultiViewAutoencoder, self).__init__()
         self.autoencoder_1 = SphericalAutoencoder(input_dim_1, shared_dim)

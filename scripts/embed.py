@@ -39,7 +39,6 @@ import nltk
 import numpy as np
 from nltk.corpus import stopwords
 
-
 if __name__ == "__main__":
     logging.basicConfig()
     log = logging.getLogger(__name__)

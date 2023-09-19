@@ -84,14 +84,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
     # yapf: enable
 
-    log.info(f"loading relations from Daylight Map Distribution from {args.daylight_relations}")  # yapf: disable
-    parquet_files = glob.glob(f"{args.daylight_relations}/*", recursive=True)  # yapf: disable
+    log.info(
+        f"loading relations from Daylight Map Distribution from {args.daylight_relations}"
+    )
+    parquet_files = glob.glob(f"{args.daylight_relations}/*", recursive=True)
     df = pd.read_parquet(parquet_files)
 
     all_tags = {}
 
     log.info(f"querying extents from {args.extent_dir}")
-    for filename in tqdm.tqdm(glob.glob(f"{args.extent_dir}/**/*.extent.npz", recursive=True)):  # yapf: disable
+    for filename in tqdm.tqdm(
+        glob.glob(f"{args.extent_dir}/**/*.extent.npz", recursive=True)
+    ):
         base_filename = filename.split("/")[-1]
         base_filename = base_filename.split(".")[0]
         extent = np.load(filename).get("extent")
