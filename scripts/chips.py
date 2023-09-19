@@ -1,5 +1,35 @@
 #!/usr/bin/env python3
 
+# BSD 3-Clause License
+#
+# Copyright (c) 2023
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 import argparse
 import json
 import logging
@@ -38,14 +68,14 @@ def random_element_generator(data):
 
 
 def list_redband_files(bucket, prefix):
-    s3 = boto3.client('s3')
+    s3 = boto3.client("s3")
     tif_files = []
 
-    paginator = s3.get_paginator('list_objects_v2')
+    paginator = s3.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        for obj in page.get('Contents', []):
-            if obj['Key'].endswith('B04.tif'):
-                tif_files.append(obj['Key'])
+        for obj in page.get("Contents", []):
+            if obj["Key"].endswith("B04.tif"):
+                tif_files.append(obj["Key"])
 
     return tif_files
 
@@ -116,27 +146,29 @@ def write_bbox_to_geojson(wgs84_bounds, filename):
     """
     # Create the GeoJSON structure
     geojson_data = {
-        "type":
-        "FeatureCollection",
-        "features": [{
-            "type": "Feature",
-            "properties": {},
-            "geometry": {
-                "type":
-                "Polygon",
-                "coordinates": [[
-                    [wgs84_bounds[0], wgs84_bounds[1]],  # Bottom-left
-                    [wgs84_bounds[0], wgs84_bounds[3]],  # Top-left
-                    [wgs84_bounds[2], wgs84_bounds[3]],  # Top-right
-                    [wgs84_bounds[2], wgs84_bounds[1]],  # Bottom-right
-                    [wgs84_bounds[0], wgs84_bounds[1]],  # Close the loop
-                ]]
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [wgs84_bounds[0], wgs84_bounds[1]],  # Bottom-left
+                            [wgs84_bounds[0], wgs84_bounds[3]],  # Top-left
+                            [wgs84_bounds[2], wgs84_bounds[3]],  # Top-right
+                            [wgs84_bounds[2], wgs84_bounds[1]],  # Bottom-right
+                            [wgs84_bounds[0], wgs84_bounds[1]],  # Close the loop
+                        ]
+                    ],
+                },
             }
-        }]
+        ],
     }
 
     # Write to file
-    with open(filename, 'w') as outfile:
+    with open(filename, "w") as outfile:
         json.dump(geojson_data, outfile, indent=4)
 
 
@@ -147,7 +179,7 @@ def read_one_location(size, threshold, series, bucket_name, prefix):
 
     # Search for suitable area in the tile
     red_band = f"/vsis3/{bucket_name}/{next(gen)}"
-    with rio.open(red_band, 'r') as ds:
+    with rio.open(red_band, "r") as ds:
         width = ds.width
         height = ds.height
 
@@ -164,10 +196,9 @@ def read_one_location(size, threshold, series, bucket_name, prefix):
     chips = []
 
     while len(chips) < series:
-
         log.info(f"{len(chips)} chips so far")
         bands = [None] * 12
-        with rio.open(red_band, 'r') as ds:
+        with rio.open(red_band, "r") as ds:
             bands[3] = data = ds.read(window=window, out_shape=(1, size, size))
         good_data = (data > 0) * (data < 5000)
 
@@ -176,12 +207,11 @@ def read_one_location(size, threshold, series, bucket_name, prefix):
         if good_data.sum() > threshold:
             for i in range(0, 12):
                 this_band = red_band.replace("B04.tif", INDEX_TO_NAME.get(i))
-                with rio.open(this_band, 'r') as ds:
+                with rio.open(this_band, "r") as ds:
                     pixel_box = wgs84_to_pixel_rect(ds, wgs84_box)
                     x1, y1, x2, y2 = pixel_box
                     window = Window(x1, y1, x2 - x1, y2 - y1)
-                    bands[i] = ds.read(window=window,
-                                       out_shape=(1, size, size))
+                    bands[i] = ds.read(window=window, out_shape=(1, size, size))
             chip = np.concatenate(bands, axis=0)
             chips.append(chip)
 
@@ -199,7 +229,6 @@ def read_one_location(size, threshold, series, bucket_name, prefix):
 
 
 if __name__ == "__main__":
-
     logging.basicConfig()
     log = logging.getLogger(__name__)
     log.setLevel(logging.INFO)
@@ -227,5 +256,7 @@ if __name__ == "__main__":
     log.info("writing files")
     basename = uuid.uuid4().hex
     np.savez_compressed(f"{args.output_chip_dir}/{basename}.chip", chips=chips)
-    np.savez_compressed(f"{args.output_extent_dir}/{basename}.extent",
-                        extent=np.array(wgs84_box, dtype=float))
+    np.savez_compressed(
+        f"{args.output_extent_dir}/{basename}.extent",
+        extent=np.array(wgs84_box, dtype=float),
+    )
