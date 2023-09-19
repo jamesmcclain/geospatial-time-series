@@ -56,6 +56,7 @@ if __name__ == "__main__":
     # SageMaker-related
     parser.add_argument("--branch", type=str, required=False, default="master", help="The GitHub branch to use")
     parser.add_argument("--checkpoint-s3", type=str, required=True, help="The location on S3 where checkpoitns will be deposited")
+    parser.add_argument("--input-mode", type=str, required=False, default="FastFile", choices=["FastFile", "File"], help="How to access data on/from S3")
     # parser.add_argument("--docker-image", type=str, required=True, help="The Docker image to use")
     parser.add_argument("--execution-role", type=str, required=True, help="The SageMaker execution role")
     parser.add_argument("--input-s3", type=str, required=True, help="The location on S3 where the training data are")
@@ -65,9 +66,9 @@ if __name__ == "__main__":
     parser.add_argument("--output-s3", type=str, required=True, help="The location on S3 where outputs will be deposited")
     # Hyperparameters
     parser.add_argument("--architecture", type=str, default="resnet18", choices=["resnet18", "resnet34", "resnet50", "mobilenetv3", "efficientnetb0"], help="The model architecture to use (default: resnet18)")
-    parser.add_argument("--autocast", type=str, default="float16", choices=["bfloat16", "float16", "float32"], help="The autocast type (default: bfloat16)")
+    parser.add_argument("--autocast", type=str, default="float16", choices=["bfloat16", "float16", "float32"], help="The autocast type (default: float16)")
     parser.add_argument("--bands", type=int, nargs="+", default=list(range(0, 12)), help="The Sentinel-2 bands to use (0 indexed)")
-    parser.add_argument("--batch-size", type=int, default=7, help="The batch size (default: 7)")
+    parser.add_argument("--batch-size", type=int, default=7, help="The batch size (default: 8)")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="The device to use for training (default: cuda)")
     parser.add_argument("--embeddings-npz", type=str, required=False, default=None, help="Where to find the embeddings")
     parser.add_argument("--epochs", type=int, default=8, help="The number of epochs (default: 8)")
@@ -115,10 +116,8 @@ if __name__ == "__main__":
         )
 
     pytorch_estimator = sagemaker.pytorch.PyTorch(
-        # image_uri=args.docker_image,
         checkpoint_local_path="/opt/ml/checkpoints",
         checkpoint_s3_uri=args.checkpoint_s3,
-        # container_entry_point=["python3"],
         entry_point="pretrain.py",
         framework_version="2.0",
         py_version="py310",
@@ -134,7 +133,7 @@ if __name__ == "__main__":
 
     training_input = TrainingInput(
         s3_data=args.input_s3,
-        input_mode="FastFile",
+        input_mode=args.input_mode,
     )
 
     pytorch_estimator.fit(

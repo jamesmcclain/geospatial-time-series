@@ -97,7 +97,7 @@ class SeriesEmbedDataset(SeriesDataset):
             self.embeddings.update({k: v})
 
     def __getitem__(self, index):
-        left, right = super().__getitem__(index)
+        left, right, _ = super().__getitem__(index)
         chip_id = self.chips[index].split("/")[-1].split(".")[0]
         embedding = self.embeddings.get(chip_id)
 
