@@ -57,10 +57,9 @@ if __name__ == "__main__":
     parser.add_argument("--branch", type=str, required=False, default="master", help="The GitHub branch to use")
     parser.add_argument("--checkpoint-s3", type=str, required=True, help="The location on S3 where checkpoints will be deposited")
     parser.add_argument("--input-mode", type=str, required=False, default="FastFile", choices=["FastFile", "File"], help="How to access data on/from S3")
-    parser.add_argument("--use-spot", type=str2bool, default=True, help="Whether to use spot instances (default: True)")
+    parser.add_argument("--use-spot", type=str2bool, required=False, default=True, help="Whether to use spot instances (default: True)")
     parser.add_argument("--volume-size", type=int, required=False, default=30, help="Instance local storage size in GB (default: 30)")
-    parser.add_argument("--wait", type=str2bool, default=True, help="Whether to wait for training to finish before terminating this script (default: True)")
-    # parser.add_argument("--docker-image", type=str, required=True, help="The Docker image to use")
+    parser.add_argument("--wait", type=str2bool, required=False, default=True, help="Whether to wait for training to finish before terminating this script (default: True)")
     parser.add_argument("--execution-role", type=str, required=True, help="The SageMaker execution role")
     parser.add_argument("--input-s3", type=str, required=True, help="The location on S3 where the training data are")
     parser.add_argument("--instance-count", type=int, required=True, help="The number of instances to use")
@@ -128,6 +127,7 @@ if __name__ == "__main__":
         instance_count=args.instance_count,
         instance_type=args.instance_type,
         max_run=args.minutes_max * 60,
+        output_path=args.output_s3,
         py_version="py310",
         role=args.execution_role,
         source_dir="pretrain",
