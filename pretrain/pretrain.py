@@ -318,16 +318,28 @@ if __name__ == "__main__":
                 autoencoder_save_path = model_save_path.replace(
                     ".pth", f"-autoencoder-{epoch:03}.pth"
                 )
-                torch.save(autoencoder, autoencoder_save_path)
+                if isinstance(autoencoder, torch.nn.parallel.DistributedDataParallel):
+                    torch.save(autoencoder.module, autoencoder_save_path)
+                else:
+                    torch.save(autoencoder, autoencoder_save_path)
             model_save_path = model_save_path.replace(".pth", f"-{epoch:03}.pth")
-            torch.save(model, model_save_path)
+            if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+                torch.save(model.module, model_save_path)
+            else:
+                torch.save(model, model_save_path)
 
     # Save the model after the last epoch if output_dir is provided
     if args.output_dir is not None and rank == 0:
         model_save_path = f"{args.output_dir}/{args.pth_out}"
         autoencoder_save_path = model_save_path.replace(".pth", f"-autoencoder.pth")
         if embeddings is not None:
-            torch.save(autoencoder, autoencoder_save_path)
+            if isinstance(autoencoder, torch.nn.parallel.DistributedDataParallel):
+                torch.save(autoencoder.module, autoencoder_save_path)
+            else:
+                torch.save(autoencoder, autoencoder_save_path)
             log.info(f"Autoencoder saved to {autoencoder_save_path}")
-        torch.save(model, model_save_path)
+        if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+            torch.save(model.module, model_save_path)
+        else:
+            torch.save(model, model_save_path)
         log.info(f"Model saved to {model_save_path}")
