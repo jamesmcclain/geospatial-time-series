@@ -6,6 +6,8 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install rasterio==1.3.7 shape
 
 RUN --mount=type=cache,target=/var/cache/apt apt update && apt install nano
 
+RUN --mount=type=cache,target=/root/.cache/pip pip install onnx
+
 WORKDIR /workdir
 
 # DOCKER_BUILDKIT=1 docker build --build-arg BUILDKIT_INLINE_CACHE=1 -f Dockerfile.pretrain -t timeseries:2.0.1-cuda11.7-cudnn8-devel .
