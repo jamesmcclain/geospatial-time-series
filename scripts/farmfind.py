@@ -76,17 +76,17 @@ def farmland_score(tags_dict):
     if is_farmland(tags_dict):
         score += 1
     if is_orchard(tags_dict):
-        score -= 1
+        score -= 3
     if is_meadow(tags_dict):
-        score -= 1
+        score -= 3
     if is_vineyard(tags_dict):
-        score -= 1
+        score -= 3
     if is_residential(tags_dict):
-        score -= 1
+        score -= 3
     if is_industrial(tags_dict):
-        score -= 1
+        score -= 3
     if is_grass(tags_dict):
-        score -= 1
+        score -= 3
     return score
 
 
@@ -95,19 +95,19 @@ def orchard_score(tags_dict):
         return 0
     score = 0
     if is_farmland(tags_dict):
-        score -= 1
+        score -= 3
     if is_orchard(tags_dict):
         score += 1
     if is_meadow(tags_dict):
-        score -= 1
+        score -= 3
     if is_vineyard(tags_dict):
-        score -= 1
+        score -= 3
     if is_residential(tags_dict):
-        score -= 1
+        score -= 3
     if is_industrial(tags_dict):
-        score -= 1
+        score -= 3
     if is_grass(tags_dict):
-        score -= 1
+        score -= 3
     return score
 
 
@@ -116,19 +116,19 @@ def meadow_score(tags_dict):
         return 0
     score = 0
     if is_farmland(tags_dict):
-        score -= 1
+        score -= 3
     if is_orchard(tags_dict):
-        score -= 1
+        score -= 3
     if is_meadow(tags_dict):
         score += 1
     if is_vineyard(tags_dict):
-        score -= 1
+        score -= 3
     if is_residential(tags_dict):
-        score -= 1
+        score -= 3
     if is_industrial(tags_dict):
-        score -= 1
+        score -= 3
     if is_grass(tags_dict):
-        score -= 1
+        score -= 3
     return score
 
 
@@ -137,19 +137,19 @@ def vineyard_score(tags_dict):
         return 0
     score = 0
     if is_farmland(tags_dict):
-        score -= 1
+        score -= 3
     if is_orchard(tags_dict):
-        score -= 1
+        score -= 3
     if is_meadow(tags_dict):
-        score -= 1
+        score -= 3
     if is_vineyard(tags_dict):
         score += 1
     if is_residential(tags_dict):
-        score -= 1
+        score -= 3
     if is_industrial(tags_dict):
-        score -= 1
+        score -= 3
     if is_grass(tags_dict):
-        score -= 1
+        score -= 3
     return score
 
 
@@ -158,19 +158,19 @@ def residential_score(tags_dict):
         return 0
     score = 0
     if is_farmland(tags_dict):
-        score -= 1
+        score -= 3
     if is_orchard(tags_dict):
-        score -= 1
+        score -= 3
     if is_meadow(tags_dict):
-        score -= 1
+        score -= 3
     if is_vineyard(tags_dict):
-        score -= 1
+        score -= 3
     if is_residential(tags_dict):
         score += 1
     if is_industrial(tags_dict):
-        score -= 1
+        score -= 3
     if is_grass(tags_dict):
-        score -= 1
+        score -= 3
     return score
 
 
@@ -179,19 +179,19 @@ def industrial_score(tags_dict):
         return 0
     score = 0
     if is_farmland(tags_dict):
-        score -= 1
+        score -= 3
     if is_orchard(tags_dict):
-        score -= 1
+        score -= 3
     if is_meadow(tags_dict):
-        score -= 1
+        score -= 3
     if is_vineyard(tags_dict):
-        score -= 1
+        score -= 3
     if is_residential(tags_dict):
-        score -= 1
+        score -= 3
     if is_industrial(tags_dict):
         score += 1
     if is_grass(tags_dict):
-        score -= 1
+        score -= 3
     return score
 
 
@@ -200,17 +200,17 @@ def grass_score(tags_dict):
         return 0
     score = 0
     if is_farmland(tags_dict):
-        score -= 1
+        score -= 3
     if is_orchard(tags_dict):
-        score -= 1
+        score -= 3
     if is_meadow(tags_dict):
-        score -= 1
+        score -= 3
     if is_vineyard(tags_dict):
-        score -= 1
+        score -= 3
     if is_residential(tags_dict):
-        score -= 1
+        score -= 3
     if is_industrial(tags_dict):
-        score -= 1
+        score -= 3
     if is_grass(tags_dict):
         score += 1
     return score
@@ -226,6 +226,7 @@ if __name__ == "__main__":
     parser.add_argument("--daylight-relations", type=str, required=True, help="Directory containing Daylight Map Distribution relations parquet files")
     parser.add_argument("--k", type=int, required=False, default=3, help="How many top k quadkeys to fetch")
     parser.add_argument("--quadkey-json", required=False, default="quadkey.json", help="Where to store the discovered quadkeys")
+    parser.add_argument("--remove-levels", required=False, type=int, default=4, help="The number of quadkey levels to remove")
     args = parser.parse_args()
     # yapf: enable
 
@@ -235,7 +236,7 @@ if __name__ == "__main__":
     parquet_files = glob.glob(f"{args.daylight_relations}/*", recursive=True)
     df = pd.read_parquet(parquet_files)
 
-    df["quadkey_11"] = df["quadkey"].str[:-4]
+    df["quadkey_11"] = df["quadkey"].str[:-args.remove_levels]
 
     key_fn_pairs = [
         ("farmland_score", farmland_score),
