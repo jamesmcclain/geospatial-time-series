@@ -236,7 +236,7 @@ if __name__ == "__main__":
     parquet_files = glob.glob(f"{args.daylight_relations}/*", recursive=True)
     df = pd.read_parquet(parquet_files)
 
-    df["quadkey_11"] = df["quadkey"].str[:-args.remove_levels]
+    df["quadkey_11"] = df["quadkey"].str[: -args.remove_levels]
 
     key_fn_pairs = [
         ("farmland_score", farmland_score),

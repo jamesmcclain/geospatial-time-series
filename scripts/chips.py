@@ -172,7 +172,7 @@ def write_bbox_to_geojson(wgs84_bounds, filename):
         json.dump(geojson_data, outfile, indent=4)
 
 
-def read_one_location(size, threshold, series, bucket_name, prefix):
+def read_one_location(size, threshold, series, bucket_name, prefix, wgs84_box=None):
     red_band_list = list_redband_files(bucket_name, prefix)
     log.info(f"{len(red_band_list)} candidate tiles")
     gen = random_element_generator(red_band_list)
@@ -180,18 +180,22 @@ def read_one_location(size, threshold, series, bucket_name, prefix):
     # Search for suitable area in the tile
     red_band = f"/vsis3/{bucket_name}/{next(gen)}"
     with rio.open(red_band, "r") as ds:
-        width = ds.width
-        height = ds.height
+        if wgs84_box is None:
+            width = ds.width
+            height = ds.height
 
-        data = np.zeros([1, 1, 1], dtype=np.int16)
-        while not (((data > 0) * (data < 5000)).sum() > threshold):
-            x = random.randint(0, width - size - 1)
-            y = random.randint(0, height - size - 1)
-            window = Window(x, y, size, size)
-            log.info(f"trying {x}, {y}")
-            data = ds.read(window=window, out_shape=(1, size, size))
-
-        wgs84_box = pixel_to_wgs84_rect(ds, [x, y, x + size, y + size])
+            data = np.zeros([1, 1, 1], dtype=np.int16)
+            while not (((data > 0) * (data < 5000)).sum() > threshold):
+                x = random.randint(0, width - size - 1)
+                y = random.randint(0, height - size - 1)
+                window = Window(x, y, size, size)
+                log.info(f"trying {x}, {y}")
+                data = ds.read(window=window, out_shape=(1, size, size))
+            wgs84_box = pixel_to_wgs84_rect(ds, [x, y, x + size, y + size])
+        else:
+            pixel_box = wgs84_to_pixel_rect(ds, wgs84_box)
+            x1, y1, x2, y2 = pixel_box
+            window = Window(x1, y1, x2 - x1, y2 - y1)
 
     chips = []
 
@@ -235,14 +239,17 @@ if __name__ == "__main__":
 
     # yapf: disable
     parser = argparse.ArgumentParser(description="")
-    parser.add_argument("--series", type=int, required=False, default=1, help="The number of chips to collect")
+    parser.add_argument("--bucket", type=str, required=False, default="sentinel-cogs", help="The S3 bucket with the source data")
     parser.add_argument("--good-data-threshold", type=float, required=False, default=0.80, help="The minimum proportion of pixels needed for a chip to be \"good\"")
-    parser.add_argument("--size", type=int, required=False, default=512, help="The linear size (in pixels) of each chip")
+    parser.add_argument("--bbox", type=float, required=False, nargs="+", help="A prescribed bounding box")
     parser.add_argument("--output-chip-dir", type=str, required=False, default="/tmp/", help="Where to store the retrieved chips")
     parser.add_argument("--output-extent-dir", type=str, required=False, default="/tmp/", help="Where to store the extents of the retrieved chips")
-    parser.add_argument("--bucket", type=str, required=False, default="sentinel-cogs", help="The S3 bucket with the source data")
     parser.add_argument("--prefix", type=str, required=False, default="sentinel-s2-l2a-cogs/11/S/KU/", help="The S3 prefix for the source data")
+    parser.add_argument("--series", type=int, required=False, default=1, help="The number of chips to collect")
+    parser.add_argument("--size", type=int, required=False, default=512, help="The linear size (in pixels) of each chip")
     args = parser.parse_args()
+    if args.bbox is not None and len(args.bbox) != 4:
+        parser.error("If --bbox is provided, the number of arguments must be exactly four")
     # yapf: enable
 
     bucket_name = args.bucket
@@ -251,7 +258,9 @@ if __name__ == "__main__":
     series = args.series
     thr = size * size * args.good_data_threshold
 
-    chips, wgs84_box = read_one_location(size, thr, series, bucket_name, prefix)
+    chips, wgs84_box = read_one_location(
+        size, thr, series, bucket_name, prefix, args.bbox
+    )
 
     log.info("writing files")
     basename = uuid.uuid4().hex
