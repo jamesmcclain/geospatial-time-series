@@ -32,14 +32,9 @@
 
 import argparse
 
-import boto3
 import sagemaker
 import sagemaker.pytorch
 from sagemaker.inputs import TrainingInput
-from sagemaker.processing import ProcessingInput, ProcessingOutput, ScriptProcessor
-from sagemaker.workflow.pipeline import Pipeline
-from sagemaker.workflow.pipeline_context import PipelineSession
-from sagemaker.workflow.steps import ProcessingStep, TrainingStep
 
 if __name__ == "__main__":
 

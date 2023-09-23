@@ -35,7 +35,6 @@ import glob
 import json
 import logging
 
-import numpy as np
 import pandas as pd
 import tqdm
 
@@ -253,15 +252,14 @@ if __name__ == "__main__":
     for key, fn in tqdm.tqdm(key_fn_pairs):
         df[key] = df["tags"].apply(fn)
         output.update({key: []})
-        for quadkey, score in (
+        for quadkey_11, score in (
             df.groupby("quadkey_11")[key]
             .sum()
             .sort_values(ascending=False)
             .head(args.k)
             .items()
         ):
-            output.get(key).append([quadkey, score])
-            log.info(f"quadkey_11={quadkey_11} score={score}")
+            output.get(key).append([quadkey_11, score])
         df.drop(columns=[key], inplace=True)
 
         with open(args.quadkey_json, "w") as json_file:

@@ -36,8 +36,7 @@ import gzip
 import json
 import lzma
 
-from shapely.geometry import Polygon, shape
-from shapely.ops import unary_union
+from shapely.geometry import shape
 
 
 def load_geojson(filename):

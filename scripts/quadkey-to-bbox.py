@@ -32,7 +32,6 @@
 
 import argparse
 import json
-from typing import List, Tuple
 
 from pyquadkey2 import quadkey
 
@@ -68,8 +67,8 @@ def quadkey_to_geojson_polygon(qk: str) -> dict:
 def main():
     # yapf: disable
     parser = argparse.ArgumentParser(description="Convert Bing Map Tile quadkeys to GeoJSON bounding boxes.")
-    parser.add_argument("--input-file", help="Path to the input JSON file containing quadkeys.")
-    parser.add_argument("--output-file", help="Path to the output GeoJSON file.")
+    parser.add_argument("--input-file", required=True, help="Path to the input JSON file containing quadkeys.")
+    parser.add_argument("--output-file", required=True, help="Path to the output GeoJSON file.")
     parser.add_argument("--key", required=True, help="The key within the json file to use.")
     args = parser.parse_args()
     # yapf: enable
