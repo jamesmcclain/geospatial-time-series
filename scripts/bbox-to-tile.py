@@ -36,7 +36,9 @@ import gzip
 import json
 import lzma
 
+import tqdm
 from shapely.geometry import shape
+from shapely.strtree import STRtree
 
 
 def load_geojson(filename):
@@ -59,19 +61,32 @@ def save_geojson(data, filename):
         json.dump(data, file, indent=4)
 
 
-def find_largest_intersection(type1_polygon, type2_features):
+def build_spatial_index(type2_features):
+    polygons = [shape(feature["geometry"]) for feature in type2_features]
+    return STRtree(polygons)
+
+
+def find_largest_intersection(type1_polygon, type2_features, spatial_index):
     largest_intersection_area = 0
     largest_intersection_name = None
 
-    for feature in type2_features:
-        type2_polygon = shape(feature["geometry"])
+    # Use spatial index to find candidates for intersection
+    possible_matches = spatial_index.query(type1_polygon)
+    possible_matches = spatial_index.geometries.take(possible_matches).tolist()
+    for type2_polygon in possible_matches:
         intersection = type1_polygon.intersection(type2_polygon)
         if intersection.is_empty:
             continue
         intersection_area = intersection.area
         if intersection_area > largest_intersection_area:
+            # Find the corresponding feature
+            index = next(
+                i
+                for i, feature in enumerate(type2_features)
+                if shape(feature["geometry"]) == type2_polygon
+            )
             largest_intersection_area = intersection_area
-            largest_intersection_name = feature["properties"]["Name"]
+            largest_intersection_name = type2_features[index]["properties"]["Name"]
 
     return largest_intersection_name
 
@@ -79,26 +94,29 @@ def find_largest_intersection(type1_polygon, type2_features):
 def main():
     # yapf: disable
     parser = argparse.ArgumentParser(description="Find largest intersections between two GeoJSON files.")
-    parser.add_argument("--type1", required=True, help="Filename for the type 1 GeoJSON file.")
+    parser.add_argument("--type1", nargs="+", required=True, help="Filenames for the type 1 GeoJSON files.")
     parser.add_argument("--type2", required=True, help="Filename for the type 2 GeoJSON file.")
-    parser.add_argument("--output", required=True, help="Filename for the output GeoJSON file.")
+    parser.add_argument("--output", nargs="+", required=True, help="Filenames for the output GeoJSON files.")
     args = parser.parse_args()
     # yapf: enable
 
-    # The type1 file comes from quad-to-geojson.py
+    # The type1 file comes from quad-to-bbox.py
     # The type2 file comes from here: https://github.com/justinelliotmeyers/Sentinel-2-Shapefile-Index
-    type1_data = load_geojson(args.type1)
     type2_data = load_geojson(args.type2)
+    type2_features = type2_data["features"]
+    spatial_index = build_spatial_index(type2_features)
 
-    for feature in type1_data["features"]:
-        type1_polygon = shape(feature["geometry"])
-        largest_intersection_name = find_largest_intersection(
-            type1_polygon, type2_data["features"]
-        )
-        if largest_intersection_name:
-            feature["properties"]["IntersectedWith"] = largest_intersection_name
+    for type1, output in tqdm.tqdm(list(zip(args.type1, args.output))):
+        type1_data = load_geojson(type1)
+        for feature in type1_data["features"]:
+            type1_polygon = shape(feature["geometry"])
+            largest_intersection_name = find_largest_intersection(
+                type1_polygon, type2_data["features"], spatial_index
+            )
+            if largest_intersection_name:
+                feature["properties"]["IntersectedWith"] = largest_intersection_name
 
-    save_geojson(type1_data, args.output)
+        save_geojson(type1_data, output)
 
 
 if __name__ == "__main__":

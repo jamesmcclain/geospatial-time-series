@@ -73,6 +73,7 @@ def main():
     args = parser.parse_args()
     # yapf: enable
 
+    # The input file comes from farmfind.py
     with open(args.input_file, "r") as f:
         data = json.load(f)
 

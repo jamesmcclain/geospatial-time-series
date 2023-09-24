@@ -224,9 +224,9 @@ if __name__ == "__main__":
     # yapf: disable
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--daylight-relations", type=str, required=True, help="Directory containing Daylight Map Distribution relations parquet files")
-    parser.add_argument("--k", type=int, required=False, default=3, help="How many top k quadkeys to fetch")
+    parser.add_argument("--k", type=int, required=False, default=128, help="How many top k quadkeys to fetch")
     parser.add_argument("--quadkey-json", required=False, default="quadkey.json", help="Where to store the discovered quadkeys")
-    parser.add_argument("--remove-levels", required=False, type=int, default=4, help="The number of quadkey levels to remove")
+    parser.add_argument("--remove-levels", required=False, type=int, default=2, help="The number of quadkey levels to remove")
     args = parser.parse_args()
     # yapf: enable
 
