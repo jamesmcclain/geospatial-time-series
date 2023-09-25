@@ -2,7 +2,7 @@
 
 # BSD 3-Clause License
 #
-# Copyright (c) 2022-23
+# Copyright (c) 2023
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -32,14 +32,9 @@
 
 import argparse
 
-import boto3
 import sagemaker
 import sagemaker.pytorch
 from sagemaker.inputs import TrainingInput
-from sagemaker.processing import ProcessingInput, ProcessingOutput, ScriptProcessor
-from sagemaker.workflow.pipeline import Pipeline
-from sagemaker.workflow.pipeline_context import PipelineSession
-from sagemaker.workflow.steps import ProcessingStep, TrainingStep
 
 if __name__ == "__main__":
 

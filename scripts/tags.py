@@ -44,7 +44,7 @@ from pyquadkey2 import quadkey
 def dict_or_none(stuff):
     try:
         return dict(stuff)
-    except:
+    except Exception:
         return dict()
 
 
