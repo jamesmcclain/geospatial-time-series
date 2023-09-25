@@ -57,7 +57,7 @@ if __name__ == "__main__":
     model = torch.load(args.pth_in, map_location=device).to(device)
     model.eval()
 
-    x = torch.randn(1, 12, 512, 512)
+    x = torch.randn(1, 20, 12, 512, 512)
 
     torch.onnx.export(
         model,
@@ -67,7 +67,7 @@ if __name__ == "__main__":
         input_names=["data"],
         output_names=["output"],
         dynamic_axes={
-            "data": {0: "batch_size", 2: "x_dim", 3: "y_dim"},
-            "output": {0: "batch_size"},
+            "data": {0: "batch_size", 1: "series", 2: "x_dim", 3: "y_dim"},
+            "output": {0: "batch_size", 1: "series"},
         },
     )
