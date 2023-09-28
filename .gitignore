@@ -13,3 +13,6 @@ wandb/
 *.tar
 *.npy
 **/.ipynb_checkpoints/*
+*.onnx
+*.npz
+*.tar.gz
