@@ -2,7 +2,7 @@
 
 # BSD 3-Clause License
 #
-# Copyright (c) 2022-23
+# Copyright (c) 2023
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     parser.add_argument("--input-dir", type=str, required=True, help="Where to find the input data")
     parser.add_argument("--num-workers", type=int, default=3, help="Number of worker processes for the DataLoader (default: 3)")
     parser.add_argument("--output-npz", type=str, required=True, help="Where to put the embeddings")
-    parser.add_argument("--sequence", type=int, nargs="+", default=list(range(2, 31, 2)), help="The sequence of time steps (default: 2 to 30, inclusive, step size 2)")
+    parser.add_argument("--sequence", type=int, nargs="+", default=list(range(30, 0, -2)), help="The sequence of time steps (default: 2 to 30, inclusive, step size 2)")
     parser.add_argument("--tarball-in", type=str, required=True, help="Path to a tarball containing the .pth files")
     args = parser.parse_args()
     # yapf: enable
@@ -71,10 +71,10 @@ if __name__ == "__main__":
     with tarfile.open(args.tarball_in, "r:gz") as tar:
         model = torch.load(tar.extractfile("model.pth"), map_location=device).to(device)
         model.eval()
-        autoencoder = torch.load(
-            tar.extractfile("model-autoencoder.pth"), map_location=device
-        ).to(device)
-        autoencoder.eval()
+        # autoencoder = torch.load(
+        #     tar.extractfile("model-autoencoder.pth"), map_location=device
+        # ).to(device)
+        # autoencoder.eval()
 
     # Prepare dictionary of results
     results = {}
@@ -82,7 +82,7 @@ if __name__ == "__main__":
         results.update({str(i): []})
 
     dtype = eval(f"torch.{args.autocast}")
-    for i in tqdm.tqdm(args.sequence):
+    for i in tqdm.tqdm(args.sequence, desc=args.input_dir):
         # Dataset and dataloader
         dataset = SeriesDataset(args.input_dir, i // 2, args.bands)
         dataloader = DataLoader(
@@ -96,7 +96,7 @@ if __name__ == "__main__":
 
         # Inference
         with torch.inference_mode():
-            for left, right, _ in tqdm.tqdm(dataloader, leave=False):
+            for left, right, _ in tqdm.tqdm(dataloader, leave=False, desc="·" * len(args.input_dir)):
                 with torch.cuda.amp.autocast(dtype=dtype):
                     # if True:
                     data = torch.cat([left, right], dim=1).to(device)
